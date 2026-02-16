@@ -1,0 +1,14 @@
+version: 1
+mode: internal_fast
+bundle:
+  id: uc1
+  source:
+    type: filesystem
+    base_path: .
+    strict_fingerprint: true
+  layout:
+    flows_dir: flows
+    profiles_file: profiles.yaml
+    plugins_dir: plugins
+  entry_flow: flows/demo_local.yaml
+  fetch_policy: cache_check

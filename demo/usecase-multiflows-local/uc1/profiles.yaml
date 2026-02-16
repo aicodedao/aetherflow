@@ -1,0 +1,16 @@
+# demo mode
+sftp_local:
+  config:
+    base_dir: "/tmp/demo_inbox"
+smb_local:
+  config:
+    base_dir: "/tmp/demo_outbox"
+mail_dummy:
+  config:
+    # Example nested config + nested decode shape.
+    headers:
+      Authorization: "{{env.DEMO_TOKEN}}"
+  decode:
+    config:
+      headers:
+        Authorization: true

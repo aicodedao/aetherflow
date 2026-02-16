@@ -1,0 +1,49 @@
+version: 1
+
+flow:
+  id: demo_flow
+  description: "DB extract -> local artifacts (reference demo)"
+  workspace:
+    root: "/tmp/demo_work"
+    cleanup_policy: never
+  state:
+    backend: sqlite
+    path: "/tmp/demo_state/demo_flow.sqlite"
+
+# Note: to demo secrets decoding, switch driver to oracledb and profile=oracle_main,
+# then set ORA_PASS in base64 and AETHERFLOW_SECRETS_PATH.
+resources:
+  db:
+    kind: db
+    driver: sqlalchemy
+    profile: db_default
+
+jobs:
+  # Job-level gating demo:
+  # - probe produces job outputs
+  # - process runs only if has_data == true
+  - id: probe
+    steps:
+      - id: check
+        type: check_items
+        inputs:
+          # Set to [] to see job gating skip in action
+          items: [demo]
+        outputs:
+          has_data: "{{ result.has_data }}"
+          count: "{{ result.count }}"
+
+  - id: extract_only
+    depends_on: [probe]
+    when: jobs.probe.outputs.has_data == true
+    steps:
+      # Step-level short-circuit demo:
+      # If you set items: [] above AND move this gate step here with on_no_data: skip_job,
+      # aetherflow will skip the rest of this job.
+      - id: extract
+        type: db_extract
+        inputs:
+          resource: db
+          sql: "select 1 as COL"
+          output: "data.tsv"
+          format: "tsv"

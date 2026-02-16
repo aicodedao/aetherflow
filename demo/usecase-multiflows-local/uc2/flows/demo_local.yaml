@@ -1,0 +1,75 @@
+version: 1
+
+flow:
+  id: usecase2_demo_local
+  description: "Local demo: generate two CSVs + fill Excel template (no DB/SMB required)"
+  workspace:
+    root: "{{env.AETHERFLOW_WORK_ROOT:/tmp/work}}"
+    cleanup_policy: never
+  state:
+    backend: sqlite
+    path: "/tmp/state/usecase2_demo_local.sqlite"
+
+jobs:
+  - id: build_report
+    steps:
+      - id: q_ip
+        type: demo_write_csv
+        inputs:
+          output: "data/qip.csv"
+          rows: 10
+
+      - id: q_c
+        type: demo_write_csv
+        inputs:
+          output: "data/qc.csv"
+          rows: 10
+
+      - id: validate_template
+        type: excel_validate_template
+        inputs:
+          template_path: "templates/report_template.xlsx"
+          required_names: ["QIP_ANCHOR", "QC_ANCHOR"]
+
+      - id: render_excel
+        type: excel_fill_from_file
+        inputs:
+          template_path: "templates/report_template.xlsx"
+          output_path: "out/report_{{run_id}}.xlsx"
+          targets:
+            - name: qip_region
+              mode: report_region
+              sheet: "Report"
+              anchor: "QIP_ANCHOR"
+              source_path: "data/qip.csv"
+              format: "csv"
+              include_header: true
+              rows_threshold: 20000
+              fail_on_threshold: true
+              count_mode: csv_parse
+            - name: qc_region
+              mode: report_region
+              sheet: "Report"
+              anchor: "QC_ANCHOR"
+              source_path: "data/qc.csv"
+              format: "csv"
+              include_header: true
+              rows_threshold: 20000
+              fail_on_threshold: true
+              count_mode: csv_parse
+
+      - id: smb_upload
+        type: smb_upload_files
+        inputs:
+          resource: smb_local
+          local_files:
+            - "out/report_{{run_id}}.xlsx"
+          remote_dir: "outbox"
+
+      - id: email
+        type: mail_send
+        inputs:
+          resource: mail_dummy
+          to: ["local@demo"]
+          subject: "Aetherflow UC2 demo_local {{run_id}}"
+          body: "Wrote report_{{run_id}}.xlsx to local outbox."

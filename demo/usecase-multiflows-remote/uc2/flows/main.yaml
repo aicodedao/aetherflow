@@ -1,0 +1,278 @@
+version: 1
+
+flow:
+  id: usecase2_exasol_to_excel
+  description: "Exasol → (stream) CSV → Excel template fill (2 regions)"
+  workspace:
+    root: "{{env.AETHERFLOW_WORK_ROOT:/tmp/work}}"
+    cleanup_policy: never
+  state:
+    backend: sqlite
+    path: "/tmp/state/usecase2_exasol_to_excel.sqlite"
+
+resources:
+  exasol_main:
+    kind: db
+    driver: exasol
+    profile: exasol_main
+  smb_main:
+    kind: smb
+    driver: smb-pysmb
+    profile: smb_main
+  mail_main:
+    kind: mail
+    driver: mail-dummy
+    profile: mail_main
+
+jobs:
+  - id: build_report
+    steps:
+
+      # Fetch (object cache, small)
+
+      - id: fetch_small
+        type: db_fetch_small
+        inputs:
+          resource: exasol_main
+          sql: "SELECT * FROM QIP limit 10"
+          max_rows: 50000
+
+      - id: validate_template_small
+        type: excel_validate_template_custom
+        inputs:
+          template_path: "{{env.AETHERFLOW_ACTIVE_DIR}}/templates/template.xlsx"
+          required_names: ["QIP_ANCHOR", "QC_ANCHOR"]
+
+      - id: render_small
+        type: excel_fill_small
+        inputs:
+          template_path: "{{env.AETHERFLOW_ACTIVE_DIR}}/templates/template.xlsx"
+          output: "out/report_{{run_id}}_small.xlsx"
+          targets:
+            - name: qip_region
+              anchor: QIP_ANCHOR
+              columns_json: "{{ steps.fetch_small.columns_json }}"
+              rows_json: "{{ steps.fetch_small.rows_json }}"
+              row_count: "{{ steps.fetch_small.row_count }}"
+              type_cast: schema
+              dtypes_json: "{{steps.fetch_small.dtypes_json}}"
+              max_rows: 5000
+              max_cols: 20
+              insert: below
+              anchor_is_marker: true
+              template_has_header: true
+              read_header: true
+              header_mode: override
+              header_style: template     # <-- keep existing template formatting for the header row
+              header_clear: true         # <-- clears old header values so no leftovers
+              header_clear_width: 50     # <-- optional, clears wider if template had extra header columns
+              anchor_clear: true
+              anchor_clear_mode: cell
+              style_mode: copy_row
+              style_row_offset: 2
+              style_apply: data
+              clear_style_row: false
+
+      # FetchMany (Stream2File2Excel
+
+      - id: q_ip
+        type: db_extract_stream
+        inputs:
+          resource: exasol_main
+          sql: "SELECT * FROM QIP limit 10"
+          output: "data/qip.csv"
+          format: "csv"
+          include_header: true
+          emit_dtypes: true
+          delimiter: ","
+          encoding: "utf-8"
+          linefeed: "\n"
+
+      - id: q_c
+        type: db_extract_stream
+        inputs:
+          resource: exasol_main
+          sql: "SELECT * FROM QC limit 10"
+          output: "data/qc.csv"
+          format: "csv"
+          include_header: true
+          emit_dtypes: true
+          delimiter: ","
+          linefeed: "\n"
+          encoding: "utf-8"
+
+      - id: validate_template_multi_modes_1
+        type: excel_validate_template_custom
+        inputs:
+          template_path: "{{env.AETHERFLOW_ACTIVE_DIR}}/templates/template_both_modes.xlsx"
+          sheet: "Report"
+          required_names: ["QIP_ANCHOR", "QC_ANCHOR"]
+
+      - id: validate_template_multi_modes_2
+        type: excel_validate_template
+        inputs:
+          template_path: "{{env.AETHERFLOW_ACTIVE_DIR}}/templates/template_both_modes.xlsx"
+          required_names: ["QIP_ANCHOR", "QC_ANCHOR"]
+
+      - id: render_large
+        type: excel_fill_from_file
+        inputs:
+          #template_path: "{{env.AETHERFLOW_ACTIVE_DIR}}/templates/template.xlsx"
+          template_path: "{{env.AETHERFLOW_ACTIVE_DIR}}/templates/template_both_modes.xlsx"
+          output: "out/report_{{run_id}}_large.xlsx"
+          targets:
+            # Example target config for report_region (QIP/QC) that:
+            # - preserves downstream anchors (insert below)
+            # - keeps template header (header_mode=template)
+            # - keep template header styling (bold/borders/fills/merges remain)
+            # - override header values and clear old header text
+            # - reads source header for schema mapping
+            # - copies styles from a style row (anchor+2) onto data
+            # - writing header but not destroying template formatting
+            # - style-copy only for data rows
+
+            # MODE - report_region
+
+            - name: qip_region
+              mode: report_region
+              sheet: "Report"
+              anchor: "QIP_ANCHOR"
+              source_path: "{{steps.q_ip.artifact_path}}"
+              source_format: "csv"
+              type_cast: schema
+              dtypes_json: "{{steps.q_ip.dtypes_json}}"
+              insert: below
+              anchor_is_marker: true
+              template_has_header: true
+              read_header: true
+              header_mode: override
+              header_style: template                      # <-- keep existing template formatting for the header row
+              header_clear: true                          # <-- clears old header values so no leftovers
+              header_clear_width: 50                      # <-- optional, clears wider if template had extra header columns
+              anchor_clear: true
+              anchor_clear_mode: cell
+              style_mode: copy_row
+              style_row_offset: 2
+              style_apply: data
+              clear_style_row: false
+              rows_threshold: 20000
+              fail_on_threshold: true
+              count_mode: csv_parse
+
+            - name: qc_region
+              mode: report_region
+              sheet: "Report"
+              anchor: "QC_ANCHOR"
+              source_path: "{{steps.q_c.artifact_path}}"
+              source_format: "csv"
+              type_cast: schema
+              dtypes_json: "{{steps.q_c.dtypes_json}}"
+              insert: below
+              anchor_is_marker: true
+              template_has_header: true
+              read_header: true
+              header_mode: override
+              header_style: template                      # <-- keep existing template formatting for the header row
+              header_clear: true                          # <-- clears old header values so no leftovers
+              header_clear_width: 50                      # <-- optional, clears wider if template had extra header columns
+              anchor_clear: true
+              anchor_clear_mode: cell
+              style_mode: copy_row
+              style_row_offset: 2
+              style_apply: data
+              clear_style_row: false
+              rows_threshold: 20000
+              fail_on_threshold: true
+              count_mode: csv_parse
+
+            # MODE - data_sheet
+
+            - name: data_qip
+              mode: data_sheet
+              sheet: "DATA_qip"
+              cell: "A4"
+              source_path: "{{steps.q_ip.artifact_path}}"
+              source_format: "csv"
+              read_header: true
+              header_mode: append                         # default for data_sheet, keep explicit for tests
+              header_style: template                      # data_sheet usually fine like this
+              type_cast: schema
+              dtypes_json: "{{steps.q_ip.dtypes_json}}"
+              insert: replace
+              freeze_panes: true
+              autofilter: true
+              header_bold: true
+
+            - name: data_qc
+              mode: data_sheet
+              sheet: "DATA_qc"
+              cell: "A4"
+              source_path: "{{steps.q_c.artifact_path}}"
+              source_format: "csv"
+              read_header: true
+              header_mode: append
+              header_style: template
+              type_cast: schema
+              dtypes_json: "{{steps.q_c.dtypes_json}}"
+              insert: replace
+              freeze_panes: true
+              autofilter: true
+              header_bold: true
+
+            - name: demo
+              mode: data_sheet
+              data_sheet_prefix: "DATA_"                  # default, but explicit for tests
+              source_path: "{{steps.q_ip.artifact_path}}"
+              source_format: "csv"
+              read_header: true
+              header_mode: append
+              header_style: template
+              insert: replace
+              freeze_panes: true
+              autofilter: true
+              header_bold: true
+
+            - name: raw_data
+              mode: data_sheet
+              sheet: "DATA_raw"
+              cell: "A4"
+              source_path: "{{steps.q_ip.artifact_path}}"
+              source_format: "csv"
+              # header
+              read_header: true
+              header_mode: append                         # default for data_sheet, but keep explicit for tests
+              header_style: template
+              header_clear: true
+              header_clear_width: 50
+              # type casting (optional)
+              type_cast: schema
+              dtypes_json: "{{steps.q_ip.dtypes_json}}"
+              # write behavior
+              insert: replace                             # default for data_sheet; explicit for test determinism
+              max_rows: 200000
+              max_cols: 200
+              # styling
+              style_mode: copy_row
+              style_row_offset: 1                         # because cell A4 => r0=4, style row is 5
+              style_apply: data                           # apply style to data
+              clear_style_row: false
+              # data_sheet niceties
+              freeze_panes: true
+              autofilter: true
+
+      - id: smb_upload
+        type: smb_upload_files_custom
+        inputs:
+          resource: smb_main
+          local_files:
+            - "out/report_{{run_id}}_small.xlsx"
+            - "out/report_{{run_id}}_large.xlsx"
+          remote_dir: "Produktion:/DIAS/ThuongTest/aetherflow/test/reports"
+
+      - id: email
+        type: mail_send_dummy
+        inputs:
+          resource: mail_main
+          to: "{{env.MAIL_TO:info@huuthuong.com}}"
+          subject: "Aetherflow UC2 completed {{run_id}}"
+          body: "Uploaded report_{{run_id}}_[small|large].xlsx to SMB."

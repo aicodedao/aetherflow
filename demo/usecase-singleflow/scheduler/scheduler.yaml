@@ -1,0 +1,6 @@
+version: 1
+timezone: Europe/Berlin
+items:
+  - id: demo_every_5m
+    cron: "*/5 * * * *"
+    flow_yaml: "demo/flows/demo_flow.yaml"

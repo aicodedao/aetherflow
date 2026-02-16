@@ -1,0 +1,6 @@
+# demo mode
+smb_local:
+  config:
+    base_dir: "/tmp/demo_outbox"
+mail_dummy:
+  config: {}

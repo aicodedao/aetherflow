@@ -1,0 +1,31 @@
+sftp_main:
+  config:
+    host: "{{env.SFTP_HOST}}"
+    port: "{{env.SFTP_PORT:22}}"
+    user: "{{env.SFTP_USER}}"
+    password: "{{env.SFTP_PASS}}"
+    timeout: 30
+  decode:
+    config:
+      password: true
+
+smb_main:
+  config:
+    server: "{{env.SMB_HOST}}"
+    port: "{{env.SMB_PORT:445}}"
+    username: "{{env.SMB_USER}}"
+    password: "{{env.SMB_PASS}}"
+  decode:
+    config:
+      password: true
+
+mail_main:
+  config:
+    host: "{{env.SMTP_HOST}}"
+    port: "{{env.SMTP_PORT:587}}"
+    user: "{{env.SMTP_USER:}}"
+    password: "{{env.SMTP_PASS:}}"
+    starttls: true
+  decode:
+    config:
+      password: true

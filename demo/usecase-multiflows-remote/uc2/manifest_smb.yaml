@@ -1,0 +1,26 @@
+version: 1
+mode: internal_fast
+bundle:
+  id: uc2
+  source:
+    type: smb
+    resource: smb_main
+    base_path: "Produktion:/DIAS/ThuongTest/aetherflow/test/uc2"
+  layout:
+    flows_dir: flows
+    profiles_file: profiles.yaml
+    plugins_dir: plugins
+  entry_flow: flows/main.yaml
+  fetch_policy: cache_check
+
+resources:
+  smb_main:
+    kind: smb
+    driver: pysmb
+    config:
+      server: "{{env.SMB_HOST}}"
+      port: "{{env.SMB_PORT:445}}"
+      username: "{{env.SMB_USER}}"
+      password: "{{env.SMB_PASS}}"
+    decode:
+      config_paths: ["password"]

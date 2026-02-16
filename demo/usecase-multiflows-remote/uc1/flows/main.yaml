@@ -1,0 +1,123 @@
+version: 1
+
+flow:
+  id: usecase1_sftp_to_smb_email
+  description: "SFTP → unzip → transform → zip → SMB → email"
+  workspace:
+    # You can override this from the process environment.
+    root: "{{env.AETHERFLOW_WORK_ROOT:/tmp/work}}"
+    cleanup_policy: never
+  state:
+    backend: sqlite
+    path: "/tmp/state/usecase1_sftp_to_smb_email.sqlite"
+
+resources:
+  sftp_main:
+     kind: sftp
+     driver: sftp-moveit
+     profile: sftp_main
+  smb_main:
+    kind: smb
+    driver: smb-pysmb
+    profile: smb_main
+  mail_main:
+    kind: mail
+    driver: mail-dummy
+    profile: mail_main
+
+jobs:
+  - id: ingest_and_publish
+    steps:
+      - id: list_remote
+        type: sftp_list_files_custom
+        inputs:
+          resource: sftp_main
+          remote_dir: "/Home/DIAS/INT/test"
+          pattern: "*.zip"
+          recursive: true
+        outputs:
+          has_data: "{{ result.has_data }}"
+          count: "{{ result.count }}"
+          files: "{{ result.files }}"
+        on_no_data: skip_job
+
+      - id: download
+        type: sftp_download_files_custom
+        inputs:
+          resource: sftp_main
+          files: "{{job.outputs.files}}"
+          dest_dir: "inbox"
+        outputs:
+          dest_dir: "{{ result.dest_dir }}"
+
+      - id: delete
+        type: sftp_delete_files_custom
+        inputs:
+          resource: sftp_main
+          files: "{{job.outputs.files}}"
+
+      - id: email
+        type: mail_send_dummy
+        inputs:
+          resource: mail_main
+          to: "{{env.MAIL_TO:info@huuthuong.com}}"
+          subject: "Aetherflow UC1 in processing {{run_id}}"
+          body: "Downloaded {{job.outputs.files}} to local {{steps.download.dest_dir}}."
+
+  - id: next_steps
+    depends_on: ["ingest_and_publish"]
+    when: jobs.ingest_and_publish.outputs.has_data
+    steps:
+      - id: scan_zip
+        type: fs_find_zipfiles
+        inputs:
+          src_dir: "{{jobs.ingest_and_publish.outputs.dest_dir}}"
+          pattern: "*.zip"
+
+      - id: unzip
+        type: unzip
+        inputs:
+          src_dir: "{{jobs.ingest_and_publish.outputs.dest_dir}}"
+          archives: "{{steps.scan_zip.zip_files}}"
+          private_zip_folder: false
+          dest_dir: "unzipped"
+
+      - id: transform
+        type: local_transform_csv
+        inputs:
+          src_dir: "unzipped"
+          dst_dir: "transformed"
+
+      - id: zip
+        type: zip
+        inputs:
+          items:
+            - "transformed"
+          dest_path: "out/payload_{{run_id}}.zip"
+
+      - id: smb_upload
+        type: smb_upload_files_custom
+        inputs:
+          resource: smb_main
+          local_files:
+            - "out/payload_{{run_id}}.zip"
+          remote_dir: "Produktion:/DIAS/ThuongTest/aetherflow/test/upload"
+
+      - id: email
+        type: mail_send_dummy
+        inputs:
+          resource: mail_main
+          to: "{{env.MAIL_TO:info@huuthuong.com}}"
+          subject: "Aetherflow UC1 completed {{run_id}}"
+          body: "Uploaded {{steps.smb_upload.uploaded}} to SMB /outbox.\n{{jobs.ingest_and_publish.outputs.files}}"
+
+  - id: mail_if_not
+    when: jobs.ingest_and_publish.outputs.count <= 0
+    steps:
+      - id: email
+        type: mail_send_dummy
+        inputs:
+          resource: mail_main
+          to: "{{env.MAIL_TO:info@huuthuong.com}}"
+          subject: "Aetherflow UC1 nothing2do {{run_id}}"
+          body: "{{jobs.ingest_and_publish.outputs.count}} == 0. Nothing to SMB /outbox."

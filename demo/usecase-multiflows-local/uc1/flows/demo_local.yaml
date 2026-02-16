@@ -1,0 +1,68 @@
+version: 1
+
+flow:
+  id: usecase1_demo_local
+  description: "Local demo: simulate SFTP + SMB + mail (no infra required)"
+  workspace:
+    root: "{{env.AETHERFLOW_WORK_ROOT:/tmp/work}}"
+    cleanup_policy: never
+  state:
+    backend: sqlite
+    path: "/tmp/state/usecase1_demo_local.sqlite"
+
+jobs:
+  - id: demo_pipeline
+    steps:
+      - id: prepare_demo_inbox
+        type: demo_prepare_inbox
+        inputs:
+          out_dir: "demo_inbox/inbox"
+          zip_name: "sample.zip"
+
+      - id: list_remote
+        type: sftp_list_files
+        inputs:
+          resource: sftp_local
+          remote_dir: "inbox"
+          pattern: "*.zip"
+
+      - id: download
+        type: sftp_download_files
+        inputs:
+          resource: sftp_local
+          files: "{{steps.list_remote.files}}"
+          dest_dir: "inbox"
+
+      - id: unzip
+        type: unzip
+        inputs:
+          src: "inbox"
+          dst: "unzipped"
+
+      - id: transform
+        type: local_transform_csv
+        inputs:
+          src_dir: "unzipped"
+          dst_dir: "transformed"
+
+      - id: zip
+        type: zip
+        inputs:
+          src: "transformed"
+          dst: "out/payload_{{run_id}}.zip"
+
+      - id: smb_upload
+        type: smb_upload_files
+        inputs:
+          resource: smb_local
+          local_files:
+            - "out/payload_{{run_id}}.zip"
+          remote_dir: "outbox"
+
+      - id: email
+        type: mail_send
+        inputs:
+          resource: mail_dummy
+          to: ["local@demo"]
+          subject: "Aetherflow UC1 demo_local {{run_id}}"
+          body: "Wrote payload_{{run_id}}.zip to local outbox."

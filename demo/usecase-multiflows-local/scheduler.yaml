@@ -1,0 +1,9 @@
+version: 1
+timezone: Europe/Berlin
+items:
+  - id: uc1_daily
+    cron: "/2 * * * *"
+    bundle_manifest: "uc1/manifest_smb.yaml"
+  - id: uc2_weekly
+    cron: "/3 * * * 1"
+    bundle_manifest: "uc2/manifest_smb.yaml"
