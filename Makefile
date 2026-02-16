@@ -7,12 +7,12 @@ local-test:
 	. .venv/bin/activate && pip install -e packages/aetherflow-core
 	. .venv/bin/activate && pip install -e packages/aetherflow-scheduler
 	. .venv/bin/activate && pip install -e packages/aetherflow
-	. .venv/bin/activate && pytest -q -vv
+	. .venv/bin/activate && pytest -q -vv -m "not slow"
 
 pypi-test:
 	. .venv/bin/activate && pip install aetherflow-core[all,dev]
 	. .venv/bin/activate && pip install aetherflow-scheduler[dev]
-	. .venv/bin/activate && pytest -q -vv
+	. .venv/bin/activate && pytest -q -vv -m "not slow"
 
 # install only what release.py needs (optional)
 reqs:

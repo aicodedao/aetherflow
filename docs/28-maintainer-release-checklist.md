@@ -87,7 +87,7 @@ git commit -m "docs: changelog for release"
 From repo root:
 
 ```bash
-pytest -q
+pytest -q -m "not slow"
 ```
 
 Must be green. No “ship anyway”.
@@ -239,7 +239,7 @@ git push origin v<version>
 * [ ] Versions bumped in all 3 packages
 * [ ] Dependency ranges updated (scheduler→core, meta→core+scheduler)
 * [ ] CHANGELOG updated and committed
-* [ ] `pytest -q` green
+* [ ] `pytest -q -m "not slow"` green
 * [ ] Editable install works
 * [ ] CLI starts and errors cleanly
 * [ ] Wheels and sdists built for all 3

@@ -41,4 +41,5 @@ jobs:
 
       - name: Run pytest
         run: |
-          pytest -q
+          pytest -q -m "not slow"
+

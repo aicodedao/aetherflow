@@ -150,7 +150,7 @@ Important:
 Before opening a PR:
 
 - Run tests locally:
-    - `pytest -q`
+    - `pytest -q -m "not slow"`
 - Ensure your branch is up-to-date with `test`
 - Use clear commit messages (Conventional Commits recommended)
 

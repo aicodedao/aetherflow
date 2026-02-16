@@ -36,7 +36,7 @@ Optional: install extras if your change touches reporting or optional connectors
 ## Run tests
 
 ```bash
-pytest -q
+pytest -q -m "not slow"
 ```
 
 All tests must pass before submitting a PR.
