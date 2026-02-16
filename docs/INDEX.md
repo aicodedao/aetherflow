@@ -102,6 +102,7 @@ For maintainers and release managers:
 * [29-renaming-checklist](29-renaming-checklist.md)
 * [30-repo-files](30-repo-files.md)
 * [31-labeling-guide](31-labeling-guide.md)
+* [32-ci-cd.md](32-ci-cd.md)
 
 These define:
 

@@ -125,6 +125,28 @@ If your PR is labeled `breaking`, it must include:
 
 No exceptions.
 
+# CI/CD and Releases
+
+This repo uses a strict promotion flow:
+
+**any branch → PR into `test` → PR into `master`**
+
+CI must be green to merge. Releases are created automatically after CI succeeds on `test` (RC) and `master` (final).
+
+Read the full details: `docs/32-ci-cd.md`.
+
+```
+develop -> test -> master
+           ↓
+      auto-release
+           ↓
+      tag created
+           ↓
+    publish workflow
+           ↓
+     PyPI/TestPyPI
+```
+
 ---
 
 # Templating Contract

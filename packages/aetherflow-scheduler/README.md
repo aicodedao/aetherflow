@@ -18,7 +18,7 @@ pip install aetherflow-scheduler
 
 This depends on `aetherflow-core` and installs it automatically.
 
-Python: **3.10+**.
+Python: **3.11+**.
 
 ---
 

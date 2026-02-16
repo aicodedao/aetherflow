@@ -24,7 +24,7 @@ Minimal install (if you want to control optional deps yourself):
 pip install aetherflow-core
 ```
 
-Python: **3.10+**.
+Python: **3.11+**.
 
 ---
 
