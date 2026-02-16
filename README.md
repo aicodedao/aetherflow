@@ -231,7 +231,7 @@ Recommended reading order:
 
 # License
 
-(Insert your license here)
+ref. [LICENSE](LICENSE)
 
 ---
 
