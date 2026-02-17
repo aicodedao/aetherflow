@@ -39,7 +39,7 @@ release-dry-rc:
 release-rc:
 	git checkout test
 	git pull --rebase origin test
-	python release.py --mode rc --push --skip-ci-check
+	python release.py --mode rc --push --push-via-pr --skip-ci-check
 
 # DRY RUN (final on master)
 release-dry-final:
@@ -50,4 +50,4 @@ release-dry-final:
 release-final:
 	git checkout master
 	git pull --rebase origin master
-	python release.py --mode final --push --skip-ci-check
+	python release.py --mode final --push --push-via-pr --skip-ci-check
