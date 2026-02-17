@@ -25,12 +25,16 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout master
+      - name: Checkout tested commit
         uses: actions/checkout@v4
         with:
-          ref: master
           fetch-depth: 0
           fetch-tags: true
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Ensure branch refs are up-to-date
+        run: |
+          git fetch origin master --tags
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -46,6 +50,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git branch
 
       - name: Run release (Final) via PR
         env:
