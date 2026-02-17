@@ -1,11 +1,10 @@
-# .github/workflows/auto_release_final.yml
+# .github/workflows/auto_release_master.yml
 name: Auto Release (Final) - master branch via PR + tags
 
 on:
   workflow_run:
-    workflows: ["CI"]   # đổi đúng tên workflow CI của repo mày
+    workflows: ["CI"]
     types: [completed]
-    branches: [master]
 
 permissions:
   contents: write
@@ -14,19 +13,34 @@ permissions:
   statuses: read
 
 concurrency:
-  group: auto-release-final-master
+  group: auto-release-final
   cancel-in-progress: false
 
 jobs:
   release_final:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'master'
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout master
         uses: actions/checkout@v4
         with:
           ref: master
           fetch-depth: 0
+          fetch-tags: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps for release.py
+        run: |
+          python -m pip install -U pip
+          pip install requests
 
       - name: Set git identity
         run: |

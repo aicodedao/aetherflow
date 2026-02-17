@@ -1,41 +1,57 @@
-name: Publish to PyPI (tag)
+name: Publish to PyPI (after release workflow)
 
 on:
-  push:
-    tags:
-      - "*-v*"
+  workflow_run:
+    workflows:
+      - "Auto Release (Final) - master branch via PR + tags"   # change to your exact workflow name
+    types: [completed]
 
 permissions:
   id-token: write
   contents: read
 
+concurrency:
+  group: publish-pypi
+  cancel-in-progress: false
+
 jobs:
   publish_pypi:
-    # skip rc tags
-    if: "!contains(github.ref_name, 'rc')"
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repo + tags
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           fetch-tags: true
 
+      - name: Pick newest non-rc tag
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --tags origin
+
+          TAG=$(git for-each-ref --sort=-creatordate --format='%(refname:short)' refs/tags \
+            | grep -E '.+-v[0-9]+\.[0-9]+\.[0-9]+$' \
+            | head -n 1)
+
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          PKG=${TAG%%-v*}
+          echo "pkg=$PKG" >> $GITHUB_OUTPUT
+          echo "pkg_dir=packages/$PKG" >> $GITHUB_OUTPUT
+
+      - name: Checkout exact tag
+        shell: bash
+        run: |
+          git checkout "refs/tags/${{ steps.meta.outputs.tag }}"
+          git status -sb
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
-      - name: Parse package from tag
-        id: meta
-        shell: bash
-        run: |
-          TAG=${GITHUB_REF#refs/tags/}
-          PKG=${TAG%%-v*}
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
-          echo "pkg=$PKG" >> $GITHUB_OUTPUT
-          echo "pkg_dir=packages/$PKG" >> $GITHUB_OUTPUT
 
       - name: Build dist
         shell: bash

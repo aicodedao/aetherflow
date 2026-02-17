@@ -38,8 +38,9 @@ REQUIRED_BRANCH_FOR_MODE = {"rc": "test", "final": "master"}
 # Environment variable NAMES the script will read from
 ENV_GITHUB_TOKEN = "GITHUB_TOKEN"
 ENV_GITHUB_REPOSITORY = "GITHUB_REPOSITORY"  # usually "owner/repo" in Actions
+
 # Optional static fallback (useful for local dev if you want a default)
-DEFAULT_REPO_SLUG = "aicodedao/aetherflow"  # if you insist on a fallback
+DEFAULT_REPO_SLUG = "aicodedao/aetherflow"
 # --------------------------------------
 
 
@@ -129,69 +130,6 @@ def _run_dbg(cmd: Iterable[str], *, cwd: str | None = None, env: dict | None = N
     return p
 
 
-def debug_git_push(branch: str = "test") -> None:
-    print("\n=== GIT PUSH DEBUG ===", file=sys.stderr)
-
-    for k in [
-        "GITHUB_ACTIONS",
-        "GITHUB_EVENT_NAME",
-        "GITHUB_REF",
-        "GITHUB_HEAD_REF",
-        "GITHUB_BASE_REF",
-        "GITHUB_REPOSITORY",
-        "GITHUB_ACTOR",
-        "GITHUB_WORKFLOW",
-        "GITHUB_SHA",
-        "CI",
-    ]:
-        v = os.environ.get(k)
-        if v is not None:
-            print(f"{k}={v}", file=sys.stderr)
-
-    _run_dbg(["git", "--version"])
-    _run_dbg(["git", "status", "--porcelain=v1", "-b"])
-    _run_dbg(["git", "rev-parse", "--abbrev-ref", "HEAD"])
-    _run_dbg(["git", "rev-parse", "HEAD"])
-    _run_dbg(["git", "remote", "-v"])
-    _run_dbg(["git", "branch", "-vv"])
-
-    # tags (top 10)
-    p = _run_dbg(["git", "tag", "--list", "--sort=-creatordate", "--format=%(refname:short) %(creatordate:iso8601)"])
-    if p.stdout:
-        lines = p.stdout.splitlines()[:10]
-        if lines:
-            print("\n--- tags (top 10) ---", file=sys.stderr)
-            print("\n".join(lines), file=sys.stderr)
-
-    _run_dbg(["git", "show-ref", "--verify", f"refs/heads/{branch}"])
-    _run_dbg(["git", "ls-remote", "--heads", "origin", branch])
-
-    _run_dbg(["git", "config", "--get-all", "http.https://github.com/.extraheader"])
-    _run_dbg(["git", "config", "--get-all", "credential.helper"])
-    _run_dbg(["git", "config", "--get", "user.name"])
-    _run_dbg(["git", "config", "--get", "user.email"])
-
-    env = dict(os.environ)
-    env.update(
-        {
-            "GIT_TRACE": "1",
-            "GIT_TRACE_PACKET": "1",
-            "GIT_TRACE2": "1",
-            "GIT_CURL_VERBOSE": "1",
-        }
-    )
-
-    print("\n=== TRY PUSH (VERBOSE) ===", file=sys.stderr)
-    p2 = _run_dbg(["git", "push", "-v", "origin", branch], env=env)
-    if p2.returncode != 0:
-        print("\n!!! PUSH FAILED (expected if branch is protected by rulesets).", file=sys.stderr)
-
-    print("\n=== TRY PUSH TAGS (VERBOSE) ===", file=sys.stderr)
-    _run_dbg(["git", "push", "-v", "origin", "--tags"], env=env)
-
-    print("\n=== END DEBUG ===", file=sys.stderr)
-
-
 def _run(cmd: list[str], cwd: str | Path | None = None) -> str:
     p = subprocess.run(
         cmd,
@@ -233,6 +171,9 @@ def _remote_branches_containing(commit: str) -> list[str]:
 
 
 def _ensure_commit_on_branch(commit: str, branch: str) -> None:
+    """
+    Enforce "origin/<branch> contains commit".
+    """
     _fetch_all()
     branches = _remote_branches_containing(commit)
     target = f"origin/{branch}"
@@ -265,6 +206,12 @@ def _extract_version_from_tag(pkg: str, tag: str) -> Optional[Version]:
 
 
 def _latest_pkg_tag(pkg: str) -> tuple[Optional[str], Version]:
+    """
+    Determine latest tag for a package using semantic ordering:
+    - higher base version wins
+    - for same base, final > rc; else higher rc wins
+    If no tags, baseline version is 0.0.0.
+    """
     tags = _list_tags()
     best_tag = None
     best_ver: Optional[Version] = None
@@ -321,11 +268,27 @@ def _changed_files_since(tag: Optional[str], path_prefix: str) -> list[str]:
 
 
 def _git_checkout_new_branch(branch: str) -> None:
+    # idempotent-ish: if exists locally, checkout it; else create
+    p = subprocess.run(
+        ["git", "show-ref", "--verify", f"refs/heads/{branch}"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    if p.returncode == 0:
+        _run(["git", "checkout", branch])
+        return
     _run(["git", "checkout", "-b", branch])
 
 
 def _git_push_branch(branch: str) -> None:
     _run(["git", "push", "-u", "origin", branch])
+
+
+def _git_commit_all(message: str) -> None:
+    _run(["git", "add", "-A"])
+    names = _run(["git", "diff", "--cached", "--name-only"])
+    if names.strip():
+        _run(["git", "commit", "-m", message])
 
 
 # ---------------- Conventional commit parsing ----------------
@@ -706,19 +669,12 @@ def build_plan_for_pkg(pkg: str, mode: BranchMode) -> ReleasePlan:
     )
 
 
-def _git_commit_all(message: str) -> None:
-    _run(["git", "add", "-A"])
-    names = _run(["git", "diff", "--cached", "--name-only"])
-    if names.strip():
-        _run(["git", "commit", "-m", message])
-
-
 def apply_plan(
         plan: ReleasePlan, *, repo_slug: str, token: str, branch: str, dry_run: bool, skip_ci: bool
 ) -> tuple[Optional[str], str]:
     """
     PR-based flow:
-    - Modify files + commit locally.
+    - Modify files + commit (on CURRENT branch).
     - DO NOT tag.
     - DO NOT push protected branch.
     Returns (tag, entry_body). If bump==none => (None, "").
@@ -755,24 +711,23 @@ def main() -> int:
     ap.add_argument("--mode", choices=["rc", "final"], required=True, help="rc => test branch; final => master branch")
     ap.add_argument("--packages", nargs="*", default=PACKAGES, help="packages to release (default: all)")
     ap.add_argument("--dry-run", action="store_true", help="print plan only; do not modify repo")
-    ap.add_argument("--push", action="store_true", help="push via PR + merge + tag-after-merge (recommended)")
-    ap.add_argument("--push-via-pr", action="store_true", help="REQUIRED for protected branches (GH rulesets)")
+    ap.add_argument("--push", action="store_true", help="push via PR + merge + tag-after-merge")
+    ap.add_argument("--push-via-pr", action="store_true", help="REQUIRED for protected branches")
     ap.add_argument("--no-auto-merge", action="store_true", help="create PR but do not auto-merge")
     ap.add_argument("--pr-merge-method", choices=["merge", "squash", "rebase"], default="merge")
     ap.add_argument("--branch", default=None, help="expected base branch (defaults based on --mode)")
-    ap.add_argument("--force", action="store_true", help="force release even if no changes (defaults to patch bump)")
-    ap.add_argument("--force-bump", choices=["patch", "minor", "major"], default="patch", help="bump level used when --force is set")
+    ap.add_argument("--force", action="store_true", help="force release even if no changes")
+    ap.add_argument("--force-bump", choices=["patch", "minor", "major"], default="patch")
     ap.add_argument("--allow-dirty", action="store_true", help="allow running with uncommitted changes (LOCAL TEST ONLY)")
     ap.add_argument("--skip-ci-check", action="store_true", help="skip waiting for CI green")
-    ap.add_argument("--debug-push", action="store_true", help="print verbose git push debug (usually not needed)")
     args = ap.parse_args()
 
     mode: BranchMode = args.mode  # type: ignore
-    branch = args.branch or REQUIRED_BRANCH_FOR_MODE[mode]
+    base_branch = args.branch or REQUIRED_BRANCH_FOR_MODE[mode]
 
     cur = _current_branch()
-    if cur != branch:
-        raise RuntimeError(f"Release mode '{mode}' must run on branch '{branch}'. You are on '{cur}'.")
+    if cur != base_branch:
+        raise RuntimeError(f"Release mode '{mode}' must run on branch '{base_branch}'. You are on '{cur}'.")
 
     _ensure_clean(allow_dirty=args.allow_dirty)
 
@@ -780,7 +735,7 @@ def main() -> int:
     token = _require_token()
 
     head = _head_sha()
-    _ensure_commit_on_branch(head, branch)
+    _ensure_commit_on_branch(head, base_branch)
 
     plans = [build_plan_for_pkg(p, mode) for p in args.packages]
     if args.force:
@@ -809,6 +764,22 @@ def main() -> int:
         print("\nDRY-RUN: no files changed, no commits/tags created.\n")
         return 0
 
+    # If pushing: we MUST do PR-based flow.
+    rel_branch = None
+    if args.push:
+        if not args.push_via_pr:
+            raise RuntimeError(
+                "Repo ruleset says: changes must be made through a pull request.\n"
+                "Run with: --push --push-via-pr"
+            )
+
+        base_sha = _head_sha()
+        short = base_sha[:7]
+        rel_branch = f"release/{mode}-{date.today().isoformat().replace('-', '')}-{short}"
+
+        # ✅ critical: create release branch FIRST so commits land on it
+        _git_checkout_new_branch(rel_branch)
+
     tags: list[str] = []
     entries_by_tag: dict[str, str] = {}
 
@@ -817,7 +788,7 @@ def main() -> int:
             p,
             repo_slug=repo_slug,
             token=token,
-            branch=branch,
+            branch=base_branch,
             dry_run=False,
             skip_ci=args.skip_ci_check,
         )
@@ -835,23 +806,8 @@ def main() -> int:
             print(" -", t)
         return 0
 
-    if not args.push_via_pr:
-        raise RuntimeError(
-            "This repo enforces 'Changes must be made through a pull request' on protected branches.\n"
-            "Re-run with: --push --push-via-pr"
-        )
+    assert rel_branch is not None
 
-    if args.debug_push:
-        # this will likely show GH013 on protected branches (expected)
-        debug_git_push(branch)
-
-    base_branch = branch
-    base_sha = _head_sha()
-
-    short = base_sha[:7]
-    rel_branch = f"release/{mode}-{date.today().isoformat().replace('-', '')}-{short}"
-
-    _git_checkout_new_branch(rel_branch)
     _git_push_branch(rel_branch)
 
     pr_title = f"Release {mode}: " + ", ".join(tags)
@@ -877,7 +833,7 @@ def main() -> int:
     print(f"\n✅ Created PR #{pr_number}: {pr_url}")
 
     if args.no_auto_merge:
-        print("\nAuto-merge disabled. Merge the PR manually, then re-run tag step (or enable auto-merge).")
+        print("\nAuto-merge disabled. Merge the PR manually, then tag on merge commit.")
         return 0
 
     pr_head_sha = pr["head"]["sha"]

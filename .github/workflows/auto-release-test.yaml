@@ -1,11 +1,10 @@
-# .github/workflows/auto_release_rc.yml
+# .github/workflows/auto_release_test.yml
 name: Auto Release (RC) - test branch via PR + tags
 
 on:
   workflow_run:
-    workflows: ["CI"]   # đổi đúng tên workflow CI của repo mày
+    workflows: ["CI"]
     types: [completed]
-    branches: [test]
 
 permissions:
   contents: write
@@ -14,19 +13,35 @@ permissions:
   statuses: read
 
 concurrency:
-  group: auto-release-rc-test
+  group: auto-release-rc
   cancel-in-progress: false
 
 jobs:
   release_rc:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    # ✅ Only when CI run is for the *push* to test (not PR, the head_branch will be "test")
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'test'
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout test
         uses: actions/checkout@v4
         with:
           ref: test
           fetch-depth: 0
+          fetch-tags: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps for release.py
+        run: |
+          python -m pip install -U pip
+          pip install requests
 
       - name: Set git identity
         run: |
