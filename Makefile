@@ -32,7 +32,7 @@ push-develop:
 
 # DRY RUN (RC on test)
 release-dry-rc:
-	python release.py --mode rc --dry-run
+	python release.py --mode rc --dry-run --allow-dirty
 
 # REAL RC release (must run on test, creates *rc* tags, pushes tags)
 # requires env: GITHUB_TOKEN
@@ -43,7 +43,7 @@ release-rc:
 
 # DRY RUN (final on master)
 release-dry-final:
-	python release.py --mode final --dry-run
+	python release.py --mode final --dry-run --allow-dirty
 
 # REAL final release (must run on master, creates final tags, pushes tags)
 # requires env: GITHUB_TOKEN
