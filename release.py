@@ -754,8 +754,18 @@ def main() -> int:
     _fetch_all()  # make sure tags/branches are fresh
 
     cur = _current_branch()
+    # In GitHub Actions, checkout can be detached (cur == "HEAD") even when you intend to build from a branch.
+    # Don't fail in that case — just make sure HEAD commit belongs to origin/<base_branch>,
+    # then attach a local branch for later operations.
     if cur != base_branch:
-        raise RuntimeError(f"Release mode '{mode}' must run on branch '{base_branch}'. You are on '{cur}'.")
+        if cur == "HEAD":
+            # attach local branch to remote base
+            _fetch_all()
+            _run(["git", "checkout", "-B", base_branch, f"origin/{base_branch}"])
+        else:
+            raise RuntimeError(
+                f"Release mode '{mode}' must run on branch '{base_branch}'. You are on '{cur}'."
+            )
 
     _ensure_clean(allow_dirty=args.allow_dirty)
 
