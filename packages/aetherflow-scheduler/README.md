@@ -26,6 +26,7 @@ Python: **3.10+**.
 
 ```bash
 aetherflow-scheduler --help
+
 aetherflow-scheduler run path/to/scheduler.yaml
 ```
 

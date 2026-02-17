@@ -36,7 +36,7 @@ REQUIRED_BRANCH_FOR_MODE = {"rc": "test", "final": "master"}
 ENV_GITHUB_TOKEN = "GITHUB_TOKEN"
 ENV_GITHUB_REPOSITORY = "GITHUB_REPOSITORY"  # usually "owner/repo" in Actions
 # Optional static fallback (useful for local dev if you want a default)
-DEFAULT_REPO_SLUG = "aicodedao/aetherflow" # if you insist on a fallback
+DEFAULT_REPO_SLUG = "aicodedao/aetherflow"  # if you insist on a fallback
 # --------------------------------------
 
 
@@ -83,7 +83,7 @@ class CommitEntry:
     sha: str
     subject: str
     body: str
-    typ: str   # feat/fix/perf/docs/refactor/chore/ci/build/test/other
+    typ: str  # feat/fix/perf/docs/refactor/chore/ci/build/test/other
     scope: Optional[str]
     breaking: bool
 
@@ -104,6 +104,7 @@ class ReleasePlan:
 
 # ---------------- Git helpers ----------------
 
+
 def _run(cmd: list[str], cwd: str | Path | None = None) -> str:
     p = subprocess.run(
         cmd,
@@ -120,9 +121,9 @@ def _repo_root() -> Path:
     return Path(_run(["git", "rev-parse", "--show-toplevel"])).resolve()
 
 
-def _ensure_clean() -> None:
+def _ensure_clean(*, allow_dirty: bool = False) -> None:
     st = _run(["git", "status", "--porcelain"])
-    if st.strip():
+    if st.strip() and not allow_dirty:
         raise RuntimeError(f"Working tree dirty. Commit/stash first.\n{st}")
 
 
@@ -172,7 +173,7 @@ def _extract_version_from_tag(pkg: str, tag: str) -> Optional[Version]:
     prefix = TAG_PREFIX_FMT.format(pkg=pkg)
     if not tag.startswith(prefix):
         return None
-    v = tag[len(prefix):]
+    v = tag[len(prefix) :]
     try:
         return Version.parse(v)
     except Exception:
@@ -219,13 +220,37 @@ def _latest_pkg_tag(pkg: str) -> tuple[Optional[str], Version]:
     return best_tag, best_ver
 
 
-def _rev_range_since(tag: Optional[str]) -> str:
-    return f"{tag}..HEAD" if tag else "HEAD"
+def _first_commit() -> str:
+    """
+    Oldest commit reachable from HEAD.
+    Used as a baseline when the repo has no release tags yet.
+    """
+    out = _run(["git", "rev-list", "--max-parents=0", "HEAD"])
+    commits = [x.strip() for x in out.splitlines() if x.strip()]
+    if not commits:
+        raise RuntimeError("Cannot determine first commit (repo has no commits?)")
+    return commits[-1]
+
+
+def _rev_range_since(tag: Optional[str]) -> Optional[str]:
+    """
+    Return a git revision range suitable for `git diff` and `git log`.
+
+    IMPORTANT:
+    - If tag is None (no release tags yet), returning "HEAD" is WRONG because:
+        `git diff HEAD` == diff working tree vs HEAD (often empty).
+      Instead return None and let callers choose a real baseline (first commit).
+    """
+    return f"{tag}..HEAD" if tag else None
 
 
 def _changed_files_since(tag: Optional[str], path_prefix: str) -> list[str]:
     rr = _rev_range_since(tag)
-    out = _run(["git", "diff", "--name-only", rr, "--", path_prefix])
+    if rr:
+        out = _run(["git", "diff", "--name-only", rr, "--", path_prefix])
+    else:
+        base = _first_commit()
+        out = _run(["git", "diff", "--name-only", f"{base}..HEAD", "--", path_prefix])
     return [x for x in out.splitlines() if x.strip()]
 
 
@@ -256,10 +281,16 @@ def _parse_conventional_commit(*, sha: str, subject: str, body: str) -> CommitEn
 def _git_log_commits_since(tag: Optional[str], path_prefix: str) -> list[CommitEntry]:
     """
     commits affecting a given path since last tag, oldest-first.
+    If no tag exists, include full history for that path.
     """
-    rr = _rev_range_since(tag)
     fmt = "%H%n%s%n%b%n==END=="
-    out = _run(["git", "log", rr, "--pretty=format:" + fmt, "--", path_prefix])
+    rr = _rev_range_since(tag)
+
+    if rr:
+        out = _run(["git", "log", rr, "--pretty=format:" + fmt, "--", path_prefix])
+    else:
+        out = _run(["git", "log", "--pretty=format:" + fmt, "--", path_prefix])
+
     blocks = out.split("==END==")
     commits: list[CommitEntry] = []
 
@@ -317,8 +348,10 @@ def _next_version_for_mode(last: Version, bump: Bump, mode: BranchMode) -> Versi
 
 # ---------------- pyproject editing ----------------
 
+
 def _read_pyproject_version(pyproject: Path) -> Version:
     import tomllib
+
     d = tomllib.loads(pyproject.read_text(encoding="utf-8"))
     v = d.get("project", {}).get("version") or d.get("tool", {}).get("poetry", {}).get("version")
     if not v:
@@ -330,7 +363,7 @@ def _write_pyproject_version(pyproject: Path, new_version: Version) -> None:
     text = pyproject.read_text(encoding="utf-8")
     new_text, n = re.subn(
         r'(^\s*version\s*=\s*")([^"]+)(")',
-        rf'\g<1>{new_version}\g<3>',
+        rf"\g<1>{new_version}\g<3>",
         text,
         count=1,
         flags=re.M,
@@ -341,6 +374,7 @@ def _write_pyproject_version(pyproject: Path, new_version: Version) -> None:
 
 
 # ---------------- Keep a Changelog ----------------
+
 
 def _changelog_path(pkg_dir: Path) -> Path:
     return pkg_dir / "CHANGELOG.md"
@@ -452,6 +486,7 @@ def _append_link_definition(pkg_dir: Path, version: Version, repo_slug: str, pre
 
 # ---------------- GitHub API helpers ----------------
 
+
 def _detect_repo_slug() -> str:
     url = _run(["git", "remote", "get-url", "origin"])
     if url.startswith("git@"):
@@ -525,6 +560,7 @@ def _create_github_release(repo_slug: str, tag: str, name: str, body: str, token
 
 # ---------------- Release planning & apply ----------------
 
+
 def build_plan_for_pkg(pkg: str, mode: BranchMode) -> ReleasePlan:
     root = _repo_root()
     pkg_dir = root / PACKAGES_DIR / pkg
@@ -573,7 +609,9 @@ def _git_push(branch: str, push_tags: bool) -> None:
         _run(["git", "push", "origin", "--tags"])
 
 
-def apply_plan(plan: ReleasePlan, *, repo_slug: str, token: str, branch: str, push: bool, dry_run: bool) -> Optional[str]:
+def apply_plan(
+        plan: ReleasePlan, *, repo_slug: str, token: str, branch: str, push: bool, dry_run: bool
+) -> Optional[str]:
     if plan.bump == "none":
         return None
 
@@ -608,7 +646,7 @@ def apply_plan(plan: ReleasePlan, *, repo_slug: str, token: str, branch: str, pu
         _git_push(branch, push_tags=True)
 
     # Create GitHub Release notes from changelog entry
-    prerelease = (plan.mode == "rc")
+    prerelease = plan.mode == "rc"
     _create_github_release(
         repo_slug=repo_slug,
         tag=new_tag,
@@ -629,7 +667,8 @@ def main() -> int:
     ap.add_argument("--push", action="store_true", help="push branch + tags to origin")
     ap.add_argument("--branch", default=None, help="expected branch (defaults based on --mode)")
     ap.add_argument("--force", action="store_true", help="force release even if no changes (defaults to patch bump)")
-    ap.add_argument("--force-bump", choices=["patch","minor","major"], default="patch", help="bump level used when --force is set")
+    ap.add_argument("--force-bump", choices=["patch", "minor", "major"], default="patch", help="bump level used when --force is set")
+    ap.add_argument("--allow-dirty", action="store_true", help="allow running with uncommitted changes (LOCAL TEST ONLY)")
     args = ap.parse_args()
 
     mode: BranchMode = args.mode  # type: ignore
@@ -640,7 +679,7 @@ def main() -> int:
     if cur != branch:
         raise RuntimeError(f"Release mode '{mode}' must run on branch '{branch}'. You are on '{cur}'.")
 
-    _ensure_clean()
+    _ensure_clean(allow_dirty=args.allow_dirty)
 
     # GH repo slug + token
     repo_slug = os.getenv(ENV_GITHUB_REPOSITORY) or DEFAULT_REPO_SLUG or _detect_repo_slug()
