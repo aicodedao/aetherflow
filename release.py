@@ -4,11 +4,14 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import shlex
 import subprocess
+import sys
 import urllib.parse
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
+from typing import Iterable
 from typing import Literal, Optional
 
 import requests
@@ -103,6 +106,93 @@ class ReleasePlan:
 
 
 # ---------------- Git helpers ----------------
+
+
+def _run_dbg(cmd: Iterable[str], *, cwd: str | None = None, env: dict | None = None) -> subprocess.CompletedProcess:
+    cmd = list(cmd)
+    print("\n$ " + " ".join(shlex.quote(x) for x in cmd), file=sys.stderr)
+    p = subprocess.run(
+        cmd,
+        cwd=cwd,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    print(f"[exit={p.returncode}]", file=sys.stderr)
+    if p.stdout:
+        print("\n--- stdout ---", file=sys.stderr)
+        print(p.stdout.rstrip(), file=sys.stderr)
+    if p.stderr:
+        print("\n--- stderr ---", file=sys.stderr)
+        print(p.stderr.rstrip(), file=sys.stderr)
+    return p
+
+
+def debug_git_push(branch: str = "test") -> None:
+    print("\n=== GIT PUSH DEBUG ===", file=sys.stderr)
+
+    # Context signals (super helpful in Actions)
+    for k in [
+        "GITHUB_ACTIONS",
+        "GITHUB_EVENT_NAME",
+        "GITHUB_REF",
+        "GITHUB_HEAD_REF",
+        "GITHUB_BASE_REF",
+        "GITHUB_REPOSITORY",
+        "GITHUB_ACTOR",
+        "GITHUB_WORKFLOW",
+        "GITHUB_SHA",
+        "CI",
+    ]:
+        v = os.environ.get(k)
+        if v is not None:
+            print(f"{k}={v}", file=sys.stderr)
+
+    # Basic repo state
+    _run_dbg(["git", "--version"])
+    _run_dbg(["git", "status", "--porcelain=v1", "-b"])
+    _run_dbg(["git", "rev-parse", "--abbrev-ref", "HEAD"])
+    _run_dbg(["git", "rev-parse", "HEAD"])
+    _run_dbg(["git", "remote", "-v"])
+    _run_dbg(["git", "branch", "-vv"])
+    _run_dbg(["git", "tag", "--list", "--sort=-creatordate", "--format=%(refname:short) %(creatordate:iso8601)", "--max-count=10"])
+
+    # Verify the branch exists locally and remotely
+    _run_dbg(["git", "show-ref", "--verify", f"refs/heads/{branch}"])
+    _run_dbg(["git", "ls-remote", "--heads", "origin", branch])
+
+    # Auth hints (won't print secrets, just tells you what helper is configured)
+    _run_dbg(["git", "config", "--get-all", "http.https://github.com/.extraheader"])
+    _run_dbg(["git", "config", "--get-all", "credential.helper"])
+    _run_dbg(["git", "config", "--get", "user.name"])
+    _run_dbg(["git", "config", "--get", "user.email"])
+
+    # Try push with max verbosity
+    # GIT_TRACE & friends will surface auth and remote rejections clearly
+    env = dict(os.environ)
+    env.update(
+        {
+            "GIT_TRACE": "1",
+            "GIT_TRACE_PACKET": "1",
+            "GIT_TRACE2": "1",
+            "GIT_CURL_VERBOSE": "1",
+        }
+    )
+
+    print("\n=== TRY PUSH (VERBOSE) ===", file=sys.stderr)
+    p = _run_dbg(["git", "push", "-v", "origin", branch], env=env)
+    if p.returncode != 0:
+        print("\n!!! PUSH FAILED. Common patterns:", file=sys.stderr)
+        print("- 403/permission denied → token/app quyền thiếu hoặc ruleset chặn", file=sys.stderr)
+        print("- protected branch hook declined → branch protection/ruleset", file=sys.stderr)
+        print("- src refspec ... does not match any → branch local không tồn tại/đang detached", file=sys.stderr)
+        print("- could not read Username/password → thiếu credentials", file=sys.stderr)
+
+    print("\n=== TRY PUSH TAGS (VERBOSE) ===", file=sys.stderr)
+    _run_dbg(["git", "push", "-v", "origin", "--tags"], env=env)
+
+    print("\n=== END DEBUG ===", file=sys.stderr)
 
 
 def _run(cmd: list[str], cwd: str | Path | None = None) -> str:
@@ -680,6 +770,7 @@ def apply_plan(
     _git_tag(new_tag)
 
     if push:
+        debug_git_push(branch)
         _git_push(branch, push_tags=True)
 
     # Create GitHub Release notes from changelog entry
