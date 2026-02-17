@@ -2,3 +2,4 @@ pytest
 requests
 build
 twine
+typing_extensions

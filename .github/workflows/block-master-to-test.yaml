@@ -1,0 +1,23 @@
+name: Block master -> test PR
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - test
+
+permissions:
+  contents: read
+
+jobs:
+  block-master:
+    name: block-master
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if PR source is master
+        run: |
+          echo "PR source branch: ${{ github.head_ref }}"
+          if [ "${{ github.head_ref }}" = "master" ]; then
+            echo "::error::PR from master to test is not allowed."
+            exit 1
+          fi
