@@ -1,39 +1,56 @@
-name: Publish to TestPyPI (tag)
+name: Publish to TestPyPI (after release workflow)
 
 on:
-  push:
-    tags:
-      - "*-v*rc*"
+  workflow_run:
+    workflows:
+      - "Auto Release (RC) - test branch via PR + tags"
+    types: [completed]
 
 permissions:
   id-token: write
   contents: read
 
+concurrency:
+  group: publish-testpypi
+  cancel-in-progress: false
+
 jobs:
   publish_testpypi:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repo (default branch OK)
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           fetch-tags: true
 
+      - name: Figure out newest rc tag(s) from this run
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --tags origin
+
+          # get newest rc-tag on creatordate (top 1)
+          TAG=$(git for-each-ref --sort=-creatordate --format='%(refname:short)' refs/tags | grep -E '.+-v.+rc[0-9]+$' | head -n 1)
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+          PKG=${TAG%%-v*}
+          echo "pkg=$PKG" >> $GITHUB_OUTPUT
+          echo "pkg_dir=packages/$PKG" >> $GITHUB_OUTPUT
+
+      - name: Checkout exact tag
+        shell: bash
+        run: |
+          git checkout "refs/tags/${{ steps.meta.outputs.tag }}"
+          git status -sb
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
-      - name: Parse package from tag
-        id: meta
-        shell: bash
-        run: |
-          TAG=${GITHUB_REF#refs/tags/}
-          PKG=${TAG%%-v*}
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
-          echo "pkg=$PKG" >> $GITHUB_OUTPUT
-          echo "pkg_dir=packages/$PKG" >> $GITHUB_OUTPUT
 
       - name: Build dist
         shell: bash

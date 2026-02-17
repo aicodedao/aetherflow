@@ -1,4 +1,5 @@
-name: Auto Release (master -> PyPI via tags)
+# .github/workflows/auto_release_master.yml
+name: Auto Release (Final) - master branch via PR + tags
 
 on:
   workflow_run:
@@ -7,24 +8,24 @@ on:
 
 permissions:
   contents: write
-  actions: read
+  pull-requests: write
+  checks: read
+  statuses: read
 
 concurrency:
-  group: release-final-master
+  group: auto-release-final
   cancel-in-progress: false
 
 jobs:
   release_final:
     if: >
       github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.head_branch == 'master' &&
-      github.event.workflow_run.event != 'pull_request' &&
-      github.event.workflow_run.actor.login != 'github-actions[bot]' &&
-      !startsWith(github.event.workflow_run.head_commit.message, 'release(')
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'master'
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout master branch (full history + tags)
+      - name: Checkout master
         uses: actions/checkout@v4
         with:
           ref: master
@@ -36,19 +37,19 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install release deps
+      - name: Install deps for release.py
         run: |
           python -m pip install -U pip
-          pip install -r requirements-release.txt
+          pip install requests
 
-      - name: Configure git identity
+      - name: Set git identity
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Run release tool (FINAL)
+      - name: Run release (Final) via PR
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
-          python release.py --mode final --push --skip-ci-check
+          python release.py --mode final --push --push-via-pr --skip-ci-check

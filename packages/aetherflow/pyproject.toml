@@ -7,7 +7,7 @@ name = "aetherflow"
 version = "0.1.0"
 description = "AetherFlow meta package (convenience wrapper for core + scheduler)"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
   "aetherflow-core>=0.1.1",
   "aetherflow-scheduler>=0.1.0"
