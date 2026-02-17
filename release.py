@@ -511,35 +511,71 @@ def _require_token() -> str:
 
 
 def _check_ci_green(repo_slug: str, commit_sha: str, token: str) -> bool:
+    """
+    Wait (short) for GitHub status/check-runs to settle to success.
+
+    This avoids flakiness where workflow_run fires but the status API still shows
+    'pending' for a few seconds due to eventual consistency.
+    """
+    import time
+
     owner, repo = repo_slug.split("/", 1)
-
-    # 1) combined status
     url_status = f"https://api.github.com/repos/{owner}/{repo}/commits/{commit_sha}/status"
-    r = requests.get(url_status, headers=_github_headers(token), timeout=20)
-    if r.status_code != 200:
-        raise RuntimeError(f"Failed to fetch commit status: {r.status_code} {r.text}")
-    state = r.json().get("state")
-    if state != "success":
-        print(f"[CI] combined status state={state} for {commit_sha}")
-        return False
-
-    # 2) check runs
     url_checks = f"https://api.github.com/repos/{owner}/{repo}/commits/{commit_sha}/check-runs"
-    r2 = requests.get(url_checks, headers=_github_headers(token), timeout=20)
-    if r2.status_code != 200:
-        raise RuntimeError(f"Failed to fetch check-runs: {r2.status_code} {r2.text}")
-    checks = r2.json().get("check_runs", [])
-    for c in checks:
-        name = c.get("name")
-        status = c.get("status")
-        conclusion = c.get("conclusion")
-        if status != "completed":
-            print(f"[CI] check-run {name} status={status} (not completed)")
-            return False
-        if conclusion != "success":
-            print(f"[CI] check-run {name} conclusion={conclusion}")
-            return False
-    return True
+
+    # Poll up to ~120s
+    deadline = time.time() + 120
+    last_state = None
+
+    while time.time() < deadline:
+        # 1) combined status
+        r = requests.get(url_status, headers=_github_headers(token), timeout=20)
+        if r.status_code != 200:
+            raise RuntimeError(f"Failed to fetch commit status: {r.status_code} {r.text}")
+        state = r.json().get("state")
+        last_state = state
+
+        if state != "success":
+            print(f"[CI] combined status state={state} for {commit_sha} (waiting...)")
+            time.sleep(5)
+            continue
+
+        # 2) check runs
+        r2 = requests.get(url_checks, headers=_github_headers(token), timeout=20)
+        if r2.status_code != 200:
+            raise RuntimeError(f"Failed to fetch check-runs: {r2.status_code} {r2.text}")
+
+        checks = r2.json().get("check_runs", [])
+
+        # If no check runs are visible yet, wait a bit.
+        if not checks:
+            print(f"[CI] check-runs not visible yet for {commit_sha} (waiting...)")
+            time.sleep(5)
+            continue
+
+        all_completed = True
+        all_success = True
+        for c in checks:
+            name = c.get("name")
+            status = c.get("status")
+            conclusion = c.get("conclusion")
+            if status != "completed":
+                all_completed = False
+                all_success = False
+                print(f"[CI] check-run {name} status={status} (waiting...)")
+                break
+            if conclusion != "success":
+                all_success = False
+                print(f"[CI] check-run {name} conclusion={conclusion}")
+                break
+
+        if all_completed and all_success:
+            return True
+
+        time.sleep(5)
+
+    print(f"[CI] timeout waiting for CI to be green. last_state={last_state}")
+    return False
 
 
 def _create_github_release(repo_slug: str, tag: str, name: str, body: str, token: str, prerelease: bool) -> dict:
