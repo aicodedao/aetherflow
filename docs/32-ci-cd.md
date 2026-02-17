@@ -82,7 +82,7 @@ Trigger:
 - Guarded to avoid loops from bot release commits
 
 Action:
-- runs `python release.py --mode rc --push`
+- runs `python release.py --mode rc --push --skip-ci-check` 
 - updates per-package versions + changelogs
 - creates tags like:
     - `aetherflow-v0.1.0rc1`
@@ -97,7 +97,7 @@ Trigger:
 - Only for branch `master`
 
 Action:
-- runs `python release.py --mode final --push`
+- runs `python release.py --mode final --push --skip-ci-check`
 - creates tags like:
     - `aetherflow-v0.1.0`
     - `aetherflow-core-v0.1.0`

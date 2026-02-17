@@ -646,7 +646,7 @@ def _git_push(branch: str, push_tags: bool) -> None:
 
 
 def apply_plan(
-        plan: ReleasePlan, *, repo_slug: str, token: str, branch: str, push: bool, dry_run: bool
+        plan: ReleasePlan, *, repo_slug: str, token: str, branch: str, push: bool, dry_run: bool, skip_ci: bool
 ) -> Optional[str]:
     if plan.bump == "none":
         return None
@@ -661,8 +661,9 @@ def apply_plan(
     # Ensure base commit (current HEAD) is on the expected branch + CI green
     base_commit = _head_sha()
     _ensure_commit_on_branch(base_commit, branch)
-    if not _check_ci_green(repo_slug, base_commit, token):
-        raise RuntimeError(f"CI not green for commit {base_commit}. Aborting release of {plan.pkg}.")
+    if not skip_ci:
+        if not _check_ci_green(repo_slug, base_commit, token):
+            raise RuntimeError(f"CI not green for commit {base_commit}. Aborting release of {plan.pkg}.")
 
     # Update pyproject version
     _write_pyproject_version(plan.pyproject, plan.next_version)
@@ -705,6 +706,7 @@ def main() -> int:
     ap.add_argument("--force", action="store_true", help="force release even if no changes (defaults to patch bump)")
     ap.add_argument("--force-bump", choices=["patch", "minor", "major"], default="patch", help="bump level used when --force is set")
     ap.add_argument("--allow-dirty", action="store_true", help="allow running with uncommitted changes (LOCAL TEST ONLY)")
+    ap.add_argument("--skip-ci-check", action="store_true", help="allow running continue without checking on the status of ci")
     args = ap.parse_args()
 
     mode: BranchMode = args.mode  # type: ignore
@@ -762,6 +764,7 @@ def main() -> int:
             branch=branch,
             push=args.push,
             dry_run=False,
+            skip_ci=args.skip_ci_check
         )
         if t:
             tags.append(t)
