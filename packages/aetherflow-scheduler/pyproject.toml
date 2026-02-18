@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [{name="aetherflow contributors"}]
-dependencies = ["aetherflow-core>=0.1.1", "APScheduler>=3.10", "PyYAML>=6.0"]
+dependencies = ["aetherflow-core>=0.0.1", "APScheduler>=3.10", "PyYAML>=6.0"]
 
 [project.scripts]
 aetherflow-scheduler = "aetherflow.scheduler.cli:main"
