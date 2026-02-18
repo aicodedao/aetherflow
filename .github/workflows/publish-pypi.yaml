@@ -3,8 +3,7 @@ name: Publish Final to PyPI
 on:
   push:
     tags:
-      - "*-v*"
-    # nhưng loại trừ rc bằng condition
+      - "*-v*"    
 
 permissions:
   id-token: write
