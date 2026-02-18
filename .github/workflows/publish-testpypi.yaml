@@ -3,7 +3,7 @@ name: Publish to TestPyPI (after release workflow)
 on:
   workflow_run:
     workflows:
-      - "Auto Release (RC) - test branch via PR + tags"
+      - "Auto Release (RC) - test -> release-test + tags"
     types: [completed]
 
 permissions:
