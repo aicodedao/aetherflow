@@ -142,7 +142,7 @@ def _run(
         check: bool = True,
         debug: bool = False,
         **kwargs,
-) -> subprocess.CompletedProcess:
+) -> str:
     """
     Run a command with consistent logging.
 
@@ -183,7 +183,7 @@ def _run(
             stderr=getattr(p, "stderr", None),
         )
 
-    return p
+    return p.stdout.strip()
 
 
 def _repo_root() -> Path:
