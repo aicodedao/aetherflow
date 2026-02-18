@@ -32,22 +32,23 @@ push-develop:
 
 # DRY RUN (RC on test)
 release-dry-rc:
-	python release.py --mode rc --dry-run --allow-dirty
+	python release.py --mode rc --debug --base-branch test --release-branch release-test --dry-run --allow-dirty
 
 # REAL RC release (must run on test, creates *rc* tags, pushes tags)
 # requires env: GITHUB_TOKEN
 release-rc:
 	git checkout test
 	git pull --rebase origin test
-	python release.py --mode rc --push --push-via-pr --skip-ci-check
+	python release.py --mode rc --debug --base-branch test --release-branch release-test --push
 
 # DRY RUN (final on master)
 release-dry-final:
 	python release.py --mode final --dry-run --allow-dirty
+	python release.py --mode final --base-branch master --release-branch release --dry-run --allow-dirty
 
 # REAL final release (must run on master, creates final tags, pushes tags)
 # requires env: GITHUB_TOKEN
 release-final:
 	git checkout master
 	git pull --rebase origin master
-	python release.py --mode final --push --push-via-pr --skip-ci-check
+	python release.py --mode final --base-branch master --release-branch release --push
