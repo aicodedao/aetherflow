@@ -135,25 +135,55 @@ def _run_dbg(cmd: Iterable[str], *, cwd: str | None = None, env: dict | None = N
     return p
 
 
-def _run(cmd: list[str], cwd: str | Path | None = None, *, check: bool = True, **kwargs) -> str:
-    p = subprocess.run(
-        cmd,
-        cwd=str(cwd) if cwd else None,
-        check=check,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        capture_output=True,
+def _run(
+        cmd: list[str],
+        cwd: str | Path | None = None,
+        *,
+        check: bool = True,
+        debug: bool = False,
         **kwargs,
-    )
+) -> subprocess.CompletedProcess:
+    """
+    Run a command with consistent logging.
+
+    If caller passes stdout/stderr, we do NOT use capture_output.
+    Otherwise, capture stdout/stderr so we can print in --debug and include in errors.
+    """
+
+    text = kwargs.pop("text", True)
+
+    has_stdout = "stdout" in kwargs and kwargs["stdout"] is not None
+    has_stderr = "stderr" in kwargs and kwargs["stderr"] is not None
+
+    run_kwargs = {
+        "text": text,
+        "cwd": str(cwd) if cwd else None,
+        **kwargs,
+    }
+
+    if not has_stdout and not has_stderr:
+        run_kwargs["capture_output"] = True
+
+    p = subprocess.run(cmd, **run_kwargs)
+
+    if debug:
+        print("$", " ".join(cmd))
+        if p.stdout:
+            print("--- stdout ---")
+            print(p.stdout)
+        if p.stderr:
+            print("--- stderr ---")
+            print(p.stderr)
+
     if check and p.returncode != 0:
         raise subprocess.CalledProcessError(
             p.returncode,
             p.args,
-            output=p.stdout,
-            stderr=p.stderr,
+            output=getattr(p, "stdout", None),
+            stderr=getattr(p, "stderr", None),
         )
-    return p.stdout.strip()
+
+    return p
 
 
 def _repo_root() -> Path:
@@ -235,7 +265,7 @@ def _push_release_branch(release_branch: str) -> None:
     Push release branch. If it already exists remotely, overwrite it only if fast-forward.
     """
     # -u is fine even if exists; git handles it. If branch protection blocks it, that's a hard fail.
-    _run(["git", "push", "-u", "origin", release_branch, "--force-with-lease", "--verbose"], check=True)
+    _run(["git", "push", "-u", "origin", release_branch, "--force-with-lease", "--verbose"], check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, debug=True)
 
 
 def _push_tag(tag: str) -> None:
