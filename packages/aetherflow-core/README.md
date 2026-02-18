@@ -1,7 +1,7 @@
 # aetherflow-core
 
-[![TestPyPI Version](https://img.shields.io/pypi/v/aetherflow-core.svg?label=TestPyPI&pypiBaseUrl=https://test.pypi.org)](https://test.pypi.org/project/aetherflow-core/)
-[![PyPI Version](https://img.shields.io/pypi/v/aetherflow-core)](https://pypi.org/project/aetherflow-core/)
+[![TestPyPI Version](https://img.shields.io/badge/dynamic/json?label=TestPyPI&url=https://test.pypi.org/pypi/aetherflow-core/json&query=$.info.version&cacheSeconds=10)](https://test.pypi.org/project/aetherflow-core/)
+[![PyPI Version](https://img.shields.io/pypi/v/aetherflow-core?cacheSeconds=10)](https://pypi.org/project/aetherflow-core/)
 
 `aetherflow-core` is a **YAML-first workflow engine** for ops-style ETL/ELT/automation: run-once jobs you can schedule anywhere (cron, Kubernetes, Airflow, Nomad, systemd, etc.).
 
