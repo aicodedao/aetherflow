@@ -2570,7 +2570,7 @@ class ExternalProcess(Step):
                         log_event(logger, settings=settings, level=40, event="external_process_exit", attempt=attempt, exit_code=rc, **fields)
                     if rc in retry_on_exit and attempt < max_attempts:
                         continue
-                    raise RuntimeError(f"external.process failed with exit code {rc}")
+                    raise RuntimeError(f"external.process failed with exit code {rc}\n{cmd} - {popen_args}\n{err_cap.text()}")
 
                 # finalize atomic output directory
                 if strategy == "atomic_dir":
