@@ -83,6 +83,7 @@ jobs:
       - name: Publish to PyPI (API Token)
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
+          repository-url: https://test.pypi.org/legacy/
           password: ${{ secrets.PYPI_API_TOKEN }}
           packages-dir: ${{ steps.meta.outputs.pkg_dir }}/dist
           skip-existing: false
