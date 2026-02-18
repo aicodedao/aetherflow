@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aetherflow-scheduler"
-version = "0.1.0"
+version = "0.0.1"
 description = "APScheduler integration for aetherflow-core."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -14,6 +14,12 @@ dependencies = ["aetherflow-core>=0.1.1", "APScheduler>=3.10", "PyYAML>=6.0"]
 
 [project.scripts]
 aetherflow-scheduler = "aetherflow.scheduler.cli:main"
+
+[project.urls]
+"Homepage" = "https://github.com/aicodedao/aetherflow"
+"Documentation" = "https://github.com/aicodedao/aetherflow/tree/develop/docs"
+"Source" = "https://github.com/aicodedao/aetherflow/tree/develop/packages/aetherflow-scheduler"
+"Bug Tracker" = "https://github.com/aicodedao/aetherflow/issues"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

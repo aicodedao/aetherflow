@@ -13,5 +13,11 @@ dependencies = [
   "aetherflow-scheduler>=0.1.0"
 ]
 
+[project.urls]
+"Homepage" = "https://github.com/aicodedao/aetherflow"
+"Documentation" = "https://github.com/aicodedao/aetherflow/tree/develop/docs"
+"Source" = "https://github.com/aicodedao/aetherflow/tree/develop/packages/aetherflow"
+"Bug Tracker" = "https://github.com/aicodedao/aetherflow/issues"
+
 [tool.setuptools]
 packages = []

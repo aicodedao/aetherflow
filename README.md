@@ -1,5 +1,11 @@
 # AetherFlow
 
+[![GitHub Repo](https://img.shields.io/badge/GitHub-aetherflow-blue?logo=github)](https://github.com/aicodedao/aetherflow)
+[![CI](https://github.com/aicodedao/aetherflow/actions/workflows/ci.yaml/badge.svg)](https://github.com/aicodedao/aetherflow/blob/develop/.github/workflows/ci.yaml)
+[![PyPI](https://img.shields.io/pypi/v/aetherflow-core)](https://pypi.org/project/aetherflow-core/)
+[![Python](https://img.shields.io/pypi/pyversions/aetherflow-core)](https://pypi.org/project/aetherflow-core/)
+[![License](https://img.shields.io/badge/license-Internal-blue)](https://github.com/aicodedao/aetherflow/blob/develop/LICENSE)
+
 **AetherFlow** is a YAML-first workflow engine for ops-grade ETL/ELT/Automation workloads.
 
 It is designed to run safely and deterministically on:
@@ -29,22 +35,8 @@ AetherFlow focuses on:
 - ✅ **Bundle-based reproducibility** — fingerprinted flow + profiles + plugins  
 - ✅ **YAML-first design** — spec is data, easy to review and audit  
 
-It does not try to be a platform.
-
----
-
-# What AetherFlow Is Not
-
-AetherFlow is NOT:
-
-- Apache Airflow
-- A UI-first orchestrator
-- A webserver
-- A compute engine
-- A cluster manager
-
-It does not provision compute.  
-It runs on top of the compute you already have.
+It does not try to be a platform. It does not provision compute. It runs on top of the compute you already have.
+If you want a boring, explainable, ops-grade YAML workflow engine, you’re in the right place.
 
 ---
 
@@ -204,34 +196,89 @@ AetherFlow prefers clarity over convenience.
 
 # Public API
 
-Stable public API surface:
+AetherFlow is a **namespace package** (PEP 420).
+
+Correct imports:
+
+```python
+import aetherflow.core
+import aetherflow.scheduler
+````
+
+Stable public API surface (for plugins (connectors/ steps) / integrations):
 
 ```python
 from aetherflow.core.api import ...
 ```
 
-Everything else is internal and may change in minor releases.
+Do NOT use: Everything else is internal and may change in minor releases.
+
+```python
+from aetherflow import ...
+import aetherflow.<something_else>
+```
+
+Only these top-level subpackages are valid:
+
+* `aetherflow.core`
+* `aetherflow.scheduler`
+
+Everything else is internal unless explicitly exported via:
+
+```
+aetherflow.core.api
+```
 
 ---
 
-# Docs
+# Documentation 
 
-Canonical documentation ships with the project.
+Canonical ships with the project.
+- [Github Pages](https://aicodedao.github.io/aetherflow/) 
+- [Index in repo](docs/index.md)
+
+## Fast Reading Path
 
 Recommended reading order:
 
-1. Overview
-2. Architecture
-3. Quickstart
-4. Flow YAML Guide
-5. Builtins Catalog
-6. Failure Recovery Playbook
+1) Project overview  
+   → **[00-overview.md](docs/00-overview.md)**  
+   What AetherFlow is (and is not).
+
+2) Architecture decisions  
+   → **[02-architecture.md](docs/02-architecture.md)**  
+   Single Resolver Architecture, strict templating, config-over-code.
+
+3) Install → run → bundle → scheduler  
+   → **[01-quickstart.md](docs/01-quickstart.md)**  
+   Get something running immediately.
+
+4) Write real flows safely  
+   → **[10-flow-yaml-guide.md](docs/10-flow-yaml-guide.md)**  
+   Jobs, steps, gating, locks, retries, resume.
+
+5) 15-minute practical flow  
+   → **[93-flow-in-15-minutes.md](93-flow-in-15-minutes.md)**  
+   Zero theory. Just run it.
+
+6) Builtins Catalog  
+   → **[23-builtins-catalog.md](docs/23-builtins-catalog.md)**  
+   Builtin connectors, steps
+
+7) Failure Recovery Playbook  
+   → **[404-Failure-Recovery-Playbook.md](docs/404-Failure-Recovery-Playbook.md)**
 
 ---
 
 # License
 
 ref. [LICENSE](LICENSE)
+
+---
+
+# Contributing
+
+ref. [CONTRIBUTING](CONTRIBUTING.md)
 
 ---
 
