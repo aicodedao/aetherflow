@@ -17,4 +17,5 @@ temp
 set_envs*.py
 envs*.bat
 *.zip
-
+*.bak
+*.yaml.sample

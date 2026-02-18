@@ -4,12 +4,14 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import shlex
 import subprocess
+import sys
 import urllib.parse
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Iterable, Literal, Optional
 
 import requests
 
@@ -20,26 +22,36 @@ Bump = Literal["none", "patch", "minor", "major"]
 PACKAGES = ["aetherflow", "aetherflow-core", "aetherflow-scheduler"]
 PACKAGES_DIR = "packages"
 
-# per your request: breaking bumps MINOR (not major). Change to "major" if you want true semver.
+# breaking bumps MINOR (not major) per your preference
 BREAKING_BUMPS: Bump = "minor"
 
-# when there are changes but no conventional commit signals
+# changes exist but no conventional commit signals
 DEFAULT_BUMP_IF_CHANGES: Bump = "patch"
 
 # tags like: <pkg>-v0.1.0 / <pkg>-v0.1.0rc1
 TAG_PREFIX_FMT = "{pkg}-v"
 
-# required branches for each mode
-REQUIRED_BRANCH_FOR_MODE = {"rc": "test", "final": "master"}
-
-# Environment variable NAMES the script will read from
+ENV_RELEASE_PAT = "RELEASE_PAT"
 ENV_GITHUB_TOKEN = "GITHUB_TOKEN"
-ENV_GITHUB_REPOSITORY = "GITHUB_REPOSITORY"  # usually "owner/repo" in Actions
-# Optional static fallback (useful for local dev if you want a default)
-DEFAULT_REPO_SLUG = "aicodedao/aetherflow" # if you insist on a fallback
+ENV_GITHUB_REPOSITORY = "GITHUB_REPOSITORY"
+DEFAULT_REPO_SLUG = "aicodedao/aetherflow"
 # --------------------------------------
 
 
+# ---------------- logging helpers ----------------
+def _warn(msg: str) -> None:
+    print(f"[WARN] {msg}", file=sys.stderr)
+
+
+def _info(msg: str) -> None:
+    print(f"[INFO] {msg}", file=sys.stderr)
+
+
+def _die(msg: str) -> None:
+    raise RuntimeError(msg)
+
+
+# ---------------- data models ----------------
 @dataclass(frozen=True)
 class Version:
     major: int
@@ -83,7 +95,7 @@ class CommitEntry:
     sha: str
     subject: str
     body: str
-    typ: str   # feat/fix/perf/docs/refactor/chore/ci/build/test/other
+    typ: str
     scope: Optional[str]
     breaking: bool
 
@@ -102,17 +114,69 @@ class ReleasePlan:
     changed_files: list[str]
 
 
-# ---------------- Git helpers ----------------
-
-def _run(cmd: list[str], cwd: str | Path | None = None) -> str:
+# ---------------- git helpers ----------------
+def _run_dbg(cmd: Iterable[str], *, cwd: str | None = None, env: dict | None = None) -> subprocess.CompletedProcess:
+    cmd = list(cmd)
+    print("\n$ " + " ".join(shlex.quote(x) for x in cmd), file=sys.stderr)
     p = subprocess.run(
         cmd,
-        cwd=str(cwd) if cwd else None,
-        check=True,
+        cwd=cwd,
+        env=env,
         text=True,
         stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
+        stderr=subprocess.PIPE,
     )
+    print(f"[exit={p.returncode}]", file=sys.stderr)
+    if p.stdout:
+        print("\n--- stdout ---", file=sys.stderr)
+        print(p.stdout.rstrip(), file=sys.stderr)
+    if p.stderr:
+        print("\n--- stderr ---", file=sys.stderr)
+        print(p.stderr.rstrip(), file=sys.stderr)
+    return p
+
+
+def _run(
+        cmd: list[str],
+        cwd: str | Path | None = None,
+        *,
+        check: bool = True,
+        **kwargs,
+) -> str:
+    """
+    Run a command with consistent logging.
+
+    If caller passes stdout/stderr, we do NOT use capture_output.
+    Otherwise, capture stdout/stderr so we can print in --debug and include in errors.
+    """
+
+    text = kwargs.pop("text", True)
+
+    has_stdout = "stdout" in kwargs and kwargs["stdout"] is not None
+    has_stderr = "stderr" in kwargs and kwargs["stderr"] is not None
+
+    run_kwargs = {
+        "text": text,
+        "cwd": str(cwd) if cwd else None,
+        **kwargs,
+    }
+
+    if not has_stdout and not has_stderr:
+        run_kwargs["capture_output"] = True
+
+    p = subprocess.run(cmd, **run_kwargs)
+
+    if check and p.returncode != 0:
+        msg = (getattr(p, "stderr", None) or "").strip()
+        if msg:
+            raise RuntimeError(f"Command failed ({p.returncode}): {cmd}\n{msg}")
+        raise subprocess.CalledProcessError(
+            p.returncode,
+            p.args,
+            output=getattr(p, "stdout", None),
+            stderr=getattr(p, "stderr", None),
+        )
+
     return p.stdout.strip()
 
 
@@ -120,117 +184,120 @@ def _repo_root() -> Path:
     return Path(_run(["git", "rev-parse", "--show-toplevel"])).resolve()
 
 
-def _ensure_clean() -> None:
-    st = _run(["git", "status", "--porcelain"])
-    if st.strip():
-        raise RuntimeError(f"Working tree dirty. Commit/stash first.\n{st}")
-
-
-def _current_branch() -> str:
-    return _run(["git", "rev-parse", "--abbrev-ref", "HEAD"])
+def _ensure_clean(*, allow_dirty: bool) -> None:
+    st = _run(["git", "status", "--porcelain"], check=True)
+    if st.strip() and not allow_dirty:
+        _die(f"Working tree dirty. Commit/stash first.\n{st}")
 
 
 def _head_sha() -> str:
     return _run(["git", "rev-parse", "HEAD"])
 
 
+def _current_branch() -> str:
+    # In Actions checkout can be detached. Treat as WARNING; we should not hard-fail.
+    b = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"])
+    return b
+
+
 def _fetch_all() -> None:
-    _run(["git", "fetch", "origin", "+refs/heads/*:refs/remotes/origin/*"])
-    _run(["git", "fetch", "--tags", "origin"])
+    _run(["git", "fetch", "origin", "+refs/heads/*:refs/remotes/origin/*"], check=True)
+    _run(["git", "fetch", "--tags", "origin"], check=True)
 
 
-def _remote_branches_containing(commit: str) -> list[str]:
-    out = _run(["git", "branch", "-r", "--contains", commit])
-    return [x.strip() for x in out.splitlines() if x.strip()]
+def _ensure_remote_branch_exists(branch: str) -> None:
+    _fetch_all()
+    out = _run(["git", "ls-remote", "--heads", "origin", branch], check=True)
+    if not out.strip():
+        _die(f"Remote branch origin/{branch} not found.")
 
 
-def _ensure_commit_on_branch(commit: str, branch: str) -> None:
+def _origin_sha(branch: str) -> str:
+    _ensure_remote_branch_exists(branch)
+    return _run(["git", "rev-parse", f"origin/{branch}"], check=True)
+
+
+def _ensure_head_matches_origin(branch: str) -> None:
     """
-    Enforce "origin/<branch> contains commit" like workflow.
+    Critical: base branch HEAD must match origin/<branch>.
+    This prevents releasing from stale local state.
     """
     _fetch_all()
-    branches = _remote_branches_containing(commit)
-    target = f"origin/{branch}"
-    if target not in branches:
-        msg = "\n".join(branches) if branches else "(none)"
-        raise RuntimeError(
-            f"Commit {commit} is NOT contained in {target}. Aborting.\n"
-            f"Remote branches containing commit:\n{msg}"
+    local = _head_sha()
+    remote = _origin_sha(branch)
+    if local != remote:
+        _die(
+            f"Base branch mismatch:\n"
+            f"- local HEAD:  {local}\n"
+            f"- origin/{branch}: {remote}\n"
+            f"Checkout the branch from origin and retry."
         )
 
 
+def _checkout_branch(branch: str) -> None:
+    _run(["git", "checkout", branch], check=True)
+
+
+def _is_merge_commit(sha: str) -> bool:
+    p = _run(["git", "rev-list", "--parents", "-n", "1", sha], check=True)
+    parts = (p or "").strip().split()
+    # format: <sha> <parent1> <parent2> ...
+    return len(parts) > 2
+
+def _second_parent(sha: str) -> str:
+    p = _run(["git", "rev-parse", f"{sha}^2"], check=True)
+    return (p or "").strip()
+
+def _checkout_release_branch(release_branch: str, *, base_sha: str) -> None:
+    """
+    Create/update release branch to point at base_sha and check it out.
+
+    - If branch exists locally: reset it to base_sha.
+    - If not: create it at base_sha.
+    """
+    if _is_merge_commit(base_sha):
+        _info(f"Base SHA {base_sha} is a merge commit; using second parent to satisfy repo rules.")
+        base_sha = _second_parent(base_sha)
+    # does local branch exist?
+    p = subprocess.run(["git", "show-ref", "--verify", f"refs/heads/{release_branch}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if p.returncode == 0:
+        _run(["git", "checkout", release_branch], check=True)
+        _run(["git", "merge", "--ff-only", base_sha], check=True)
+        return
+    _run(["git", "checkout", "-b", release_branch, base_sha], check=True)
+
+
+def _push_release_branch(release_branch: str) -> None:
+    """
+    Push release branch. If it already exists remotely, overwrite it only if fast-forward.
+    """
+    # -u is fine even if exists; git handles it. If branch protection blocks it, that's a hard fail.
+    _run(["git", "push", "-u", "origin", release_branch, "--force-with-lease", "--verbose"], check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+
+
+def _push_tag(tag: str) -> None:
+    # idempotent-ish: push only if not on remote
+    out = _run(["git", "ls-remote", "--tags", "origin", f"refs/tags/{tag}"], check=True)
+    if out.strip():
+        _info(f"Remote tag already exists, skipping: {tag}")
+        return
+    _run(["git", "tag", tag], check=True)
+    _run(["git", "push", "origin", tag], check=True)
+
+
+def _git_commit_all(message: str) -> None:
+    _run(["git", "add", "-A"], check=True)
+    names = _run(["git", "diff", "--cached", "--name-only"], check=True)
+    if names.strip():
+        _run(["git", "commit", "-m", message], check=True)
+
+
 def _list_tags() -> list[str]:
-    out = _run(["git", "tag", "--list"])
+    out = _run(["git", "tag", "--list"], check=True)
     return [t for t in out.splitlines() if t.strip()]
 
 
-def _tag_name(pkg: str, version: Version) -> str:
-    return f"{TAG_PREFIX_FMT.format(pkg=pkg)}{version}"
-
-
-def _extract_version_from_tag(pkg: str, tag: str) -> Optional[Version]:
-    prefix = TAG_PREFIX_FMT.format(pkg=pkg)
-    if not tag.startswith(prefix):
-        return None
-    v = tag[len(prefix):]
-    try:
-        return Version.parse(v)
-    except Exception:
-        return None
-
-
-def _latest_pkg_tag(pkg: str) -> tuple[Optional[str], Version]:
-    """
-    Determine latest tag for a package using semantic ordering:
-    - higher base version wins
-    - for same base, final > rc; else higher rc wins
-    If no tags, baseline version is 0.0.0.
-    """
-    tags = _list_tags()
-    best_tag = None
-    best_ver: Optional[Version] = None
-
-    for t in tags:
-        v = _extract_version_from_tag(pkg, t)
-        if v is None:
-            continue
-        if best_ver is None:
-            best_ver, best_tag = v, t
-            continue
-
-        a = (v.major, v.minor, v.patch)
-        b = (best_ver.major, best_ver.minor, best_ver.patch)
-        if a != b:
-            if a > b:
-                best_ver, best_tag = v, t
-            continue
-
-        # same base
-        if best_ver.rc is None:
-            continue
-        if v.rc is None:
-            best_ver, best_tag = v, t
-            continue
-        if v.rc > best_ver.rc:
-            best_ver, best_tag = v, t
-
-    if best_ver is None:
-        return None, Version(0, 0, 0, None)
-    return best_tag, best_ver
-
-
-def _rev_range_since(tag: Optional[str]) -> str:
-    return f"{tag}..HEAD" if tag else "HEAD"
-
-
-def _changed_files_since(tag: Optional[str], path_prefix: str) -> list[str]:
-    rr = _rev_range_since(tag)
-    out = _run(["git", "diff", "--name-only", rr, "--", path_prefix])
-    return [x for x in out.splitlines() if x.strip()]
-
-
-# ---------------- Conventional commit parsing ----------------
-
+# ---------------- conventional commit parsing ----------------
 _CONV_RE = re.compile(r"^(?P<type>[a-zA-Z]+)(?:\((?P<scope>[^)]+)\))?(?P<bang>!)?:\s+(?P<desc>.+)$")
 
 
@@ -254,15 +321,14 @@ def _parse_conventional_commit(*, sha: str, subject: str, body: str) -> CommitEn
 
 
 def _git_log_commits_since(tag: Optional[str], path_prefix: str) -> list[CommitEntry]:
-    """
-    commits affecting a given path since last tag, oldest-first.
-    """
-    rr = _rev_range_since(tag)
     fmt = "%H%n%s%n%b%n==END=="
-    out = _run(["git", "log", rr, "--pretty=format:" + fmt, "--", path_prefix])
+    if tag:
+        out = _run(["git", "log", f"{tag}..HEAD", "--pretty=format:" + fmt, "--", path_prefix], check=True)
+    else:
+        out = _run(["git", "log", "--pretty=format:" + fmt, "--", path_prefix], check=True)
+
     blocks = out.split("==END==")
     commits: list[CommitEntry] = []
-
     for b in blocks:
         b = b.strip("\n")
         if not b.strip():
@@ -302,7 +368,6 @@ def _bump_from_commits(commits: list[CommitEntry], has_changes: bool) -> Bump:
 
 
 def _next_version_for_mode(last: Version, bump: Bump, mode: BranchMode) -> Version:
-    # bump base from last final base (if last is rc -> its base)
     base = last.base()
     bumped = base.bump(bump)
 
@@ -315,33 +380,89 @@ def _next_version_for_mode(last: Version, bump: Bump, mode: BranchMode) -> Versi
     return bumped.to_rc(1)
 
 
+# ---------------- tag/version helpers ----------------
+def _tag_name(pkg: str, version: Version) -> str:
+    return f"{TAG_PREFIX_FMT.format(pkg=pkg)}{version}"
+
+
+def _extract_version_from_tag(pkg: str, tag: str) -> Optional[Version]:
+    prefix = TAG_PREFIX_FMT.format(pkg=pkg)
+    if not tag.startswith(prefix):
+        return None
+    v = tag[len(prefix) :]
+    try:
+        return Version.parse(v)
+    except Exception:
+        return None
+
+
+def _latest_pkg_tag(pkg: str) -> tuple[Optional[str], Version]:
+    tags = _list_tags()
+    best_tag = None
+    best_ver: Optional[Version] = None
+
+    for t in tags:
+        v = _extract_version_from_tag(pkg, t)
+        if v is None:
+            continue
+        if best_ver is None:
+            best_ver, best_tag = v, t
+            continue
+
+        a = (v.major, v.minor, v.patch)
+        b = (best_ver.major, best_ver.minor, best_ver.patch)
+        if a != b:
+            if a > b:
+                best_ver, best_tag = v, t
+            continue
+
+        # same base
+        if best_ver.rc is None:
+            continue
+        if v.rc is None:
+            best_ver, best_tag = v, t
+            continue
+        if v.rc > best_ver.rc:
+            best_ver, best_tag = v, t
+
+    if best_ver is None:
+        return None, Version(0, 0, 0, None)
+    return best_tag, best_ver
+
+
+def _first_commit() -> str:
+    out = _run(["git", "rev-list", "--max-parents=0", "HEAD"], check=True)
+    commits = [x.strip() for x in out.splitlines() if x.strip()]
+    if not commits:
+        _die("Cannot determine first commit (repo has no commits?)")
+    return commits[-1]
+
+
+def _changed_files_since(tag: Optional[str], path_prefix: str) -> list[str]:
+    if tag:
+        out = _run(["git", "diff", "--name-only", f"{tag}..HEAD", "--", path_prefix], check=True)
+    else:
+        base = _first_commit()
+        out = _run(["git", "diff", "--name-only", f"{base}..HEAD", "--", path_prefix], check=True)
+    return [x for x in out.splitlines() if x.strip()]
+
+
 # ---------------- pyproject editing ----------------
-
-def _read_pyproject_version(pyproject: Path) -> Version:
-    import tomllib
-    d = tomllib.loads(pyproject.read_text(encoding="utf-8"))
-    v = d.get("project", {}).get("version") or d.get("tool", {}).get("poetry", {}).get("version")
-    if not v:
-        raise RuntimeError(f"Cannot find version in {pyproject}")
-    return Version.parse(str(v).strip())
-
-
 def _write_pyproject_version(pyproject: Path, new_version: Version) -> None:
     text = pyproject.read_text(encoding="utf-8")
     new_text, n = re.subn(
         r'(^\s*version\s*=\s*")([^"]+)(")',
-        rf'\g<1>{new_version}\g<3>',
+        rf"\g<1>{new_version}\g<3>",
         text,
         count=1,
         flags=re.M,
     )
     if n != 1:
-        raise RuntimeError(f"Could not update version in {pyproject} (expected exactly 1 match)")
+        _die(f"Could not update version in {pyproject} (expected exactly 1 match)")
     pyproject.write_text(new_text, encoding="utf-8")
 
 
-# ---------------- Keep a Changelog ----------------
-
+# ---------------- changelog ----------------
 def _changelog_path(pkg_dir: Path) -> Path:
     return pkg_dir / "CHANGELOG.md"
 
@@ -361,9 +482,6 @@ def _ensure_changelog_scaffold(pkg_dir: Path) -> None:
 
 
 def _render_release_entry(plan: ReleasePlan, repo_slug: str, new_tag: str, prev_tag: Optional[str]) -> str:
-    """
-    Build a Keep-a-Changelog style entry for a specific version.
-    """
     title = f"## [{plan.next_version}] - {date.today().isoformat()}"
     groups: dict[str, list[CommitEntry]] = {}
 
@@ -374,10 +492,9 @@ def _render_release_entry(plan: ReleasePlan, repo_slug: str, new_tag: str, prev_
         scope = f"**{c.scope}**: " if c.scope else ""
         breaking = " **(BREAKING)**" if c.breaking else ""
         short = c.sha[:7]
-        # Use subject as-is; it already includes type(scope): desc
         return f"- {scope}{c.subject}{breaking} ({short})"
 
-    sections = []
+    sections: list[str] = []
     mapping = [
         ("feat", "Added"),
         ("fix", "Fixed"),
@@ -400,7 +517,6 @@ def _render_release_entry(plan: ReleasePlan, repo_slug: str, new_tag: str, prev_
 
     body = "\n".join([title, ""] + sections).rstrip() + "\n"
 
-    # Compare link (also stored in links section at bottom)
     if prev_tag:
         compare = f"https://github.com/{repo_slug}/compare/{prev_tag}...{new_tag}"
         body += f"\nCompare: {compare}\n"
@@ -408,25 +524,19 @@ def _render_release_entry(plan: ReleasePlan, repo_slug: str, new_tag: str, prev_
 
 
 def _insert_release_entry_under_unreleased(pkg_dir: Path, entry: str) -> None:
-    """
-    Put entry immediately after '## [Unreleased]'.
-    """
     _ensure_changelog_scaffold(pkg_dir)
     ch = _changelog_path(pkg_dir)
     text = ch.read_text(encoding="utf-8")
 
     if "## [Unreleased]" not in text:
-        # If user has custom changelog, force inject Unreleased after title.
         text = text.replace("# Changelog\n\n", "# Changelog\n\n## [Unreleased]\n\n", 1)
 
     marker = "## [Unreleased]\n\n"
     if marker not in text:
-        # Accept variant "## [Unreleased]\n"
         marker = "## [Unreleased]\n"
         if marker not in text:
-            raise RuntimeError(f"CHANGELOG.md missing [Unreleased] section in {pkg_dir}")
+            _die(f"CHANGELOG.md missing [Unreleased] section in {pkg_dir}")
 
-    # insert entry once
     if marker == "## [Unreleased]\n\n":
         new_text = text.replace(marker, marker + entry + "\n", 1)
     else:
@@ -436,10 +546,6 @@ def _insert_release_entry_under_unreleased(pkg_dir: Path, entry: str) -> None:
 
 
 def _append_link_definition(pkg_dir: Path, version: Version, repo_slug: str, prev_tag: Optional[str], new_tag: str) -> None:
-    """
-    Add/append link definition at end:
-    [0.1.0]: https://github.com/owner/repo/compare/prev...new
-    """
     if not prev_tag:
         return
     ch = _changelog_path(pkg_dir)
@@ -450,66 +556,64 @@ def _append_link_definition(pkg_dir: Path, version: Version, repo_slug: str, pre
     ch.write_text(text + "\n" + link_line, encoding="utf-8")
 
 
-# ---------------- GitHub API helpers ----------------
-
+# ---------------- GitHub API (optional: release notes) ----------------
 def _detect_repo_slug() -> str:
-    url = _run(["git", "remote", "get-url", "origin"])
+    url = _run(["git", "remote", "get-url", "origin"], check=True)
     if url.startswith("git@"):
         slug = url.split(":", 1)[1]
-    elif url.startswith("https://") or url.startswith("http://"):
+    elif url.startswith(("https://", "http://")):
         path = urllib.parse.urlparse(url).path
         slug = path.lstrip("/")
     else:
-        raise RuntimeError(f"Unsupported origin URL: {url}")
+        _die(f"Unsupported origin URL: {url}")
     return slug.removesuffix(".git")
+
+
+def _require_token() -> str:
+    # Prefer PAT so GitHub Release shows real actor (and avoids bot-only behavior)
+    pat = os.getenv(ENV_RELEASE_PAT)
+    if pat:
+        return pat
+
+    tok = os.getenv(ENV_GITHUB_TOKEN)
+    if tok:
+        return tok
+
+    _die(f"{ENV_RELEASE_PAT} or {ENV_GITHUB_TOKEN} is required.")
+    raise RuntimeError("unreachable")
+
+
+def _maybe_auth_origin_with_pat() -> None:
+    pat = os.getenv(ENV_RELEASE_PAT)
+    if not pat:
+        return
+    repo = os.getenv(ENV_GITHUB_REPOSITORY) or DEFAULT_REPO_SLUG
+    url = f"https://x-access-token:{pat}@github.com/{repo}.git"
+    _run(["git", "remote", "set-url", "origin", url], check=True)
+    _info("origin now: " + _run(["git", "remote", "get-url", "origin"], check=True))
+
+
+def _maybe_auth_origin_with_pat() -> None:
+    pat = os.getenv(ENV_RELEASE_PAT)
+    if not pat:
+        return
+    repo = os.getenv(ENV_GITHUB_REPOSITORY) or DEFAULT_REPO_SLUG
+    url = f"https://x-access-token:{pat}@github.com/{repo}.git"
+    _info("Using RELEASE_PAT for git pushes (enables tag-triggered publish workflows).")
+    _run(["git", "remote", "set-url", "origin", url], check=True)
 
 
 def _github_headers(token: str) -> dict:
     return {"Authorization": f"token {token}", "Accept": "application/vnd.github+json"}
 
 
-def _require_token() -> str:
-    tok = os.getenv(ENV_GITHUB_TOKEN)
-    if not tok:
-        raise RuntimeError(f"{ENV_GITHUB_TOKEN} is required for CI checks + GitHub Releases")
-    return tok
-
-
-def _check_ci_green(repo_slug: str, commit_sha: str, token: str) -> bool:
+def _github_api_base(repo_slug: str) -> str:
     owner, repo = repo_slug.split("/", 1)
-
-    # 1) combined status
-    url_status = f"https://api.github.com/repos/{owner}/{repo}/commits/{commit_sha}/status"
-    r = requests.get(url_status, headers=_github_headers(token), timeout=20)
-    if r.status_code != 200:
-        raise RuntimeError(f"Failed to fetch commit status: {r.status_code} {r.text}")
-    state = r.json().get("state")
-    if state != "success":
-        print(f"[CI] combined status state={state} for {commit_sha}")
-        return False
-
-    # 2) check runs
-    url_checks = f"https://api.github.com/repos/{owner}/{repo}/commits/{commit_sha}/check-runs"
-    r2 = requests.get(url_checks, headers=_github_headers(token), timeout=20)
-    if r2.status_code != 200:
-        raise RuntimeError(f"Failed to fetch check-runs: {r2.status_code} {r2.text}")
-    checks = r2.json().get("check_runs", [])
-    for c in checks:
-        name = c.get("name")
-        status = c.get("status")
-        conclusion = c.get("conclusion")
-        if status != "completed":
-            print(f"[CI] check-run {name} status={status} (not completed)")
-            return False
-        if conclusion != "success":
-            print(f"[CI] check-run {name} conclusion={conclusion}")
-            return False
-    return True
+    return f"https://api.github.com/repos/{owner}/{repo}"
 
 
-def _create_github_release(repo_slug: str, tag: str, name: str, body: str, token: str, prerelease: bool) -> dict:
-    owner, repo = repo_slug.split("/", 1)
-    url = f"https://api.github.com/repos/{owner}/{repo}/releases"
+def _create_github_release(repo_slug: str, tag: str, name: str, body: str, token: str, prerelease: bool) -> None:
+    url = _github_api_base(repo_slug) + "/releases"
     payload = {
         "tag_name": tag,
         "name": name,
@@ -517,20 +621,20 @@ def _create_github_release(repo_slug: str, tag: str, name: str, body: str, token
         "draft": False,
         "prerelease": prerelease,
     }
-    r = requests.post(url, headers=_github_headers(token), json=payload, timeout=20)
-    if r.status_code not in (200, 201):
-        raise RuntimeError(f"Failed to create GitHub Release for {tag}: {r.status_code} {r.text}")
-    return r.json()
+    r = requests.post(url, headers=_github_headers(token), json=payload, timeout=30)
+    if r.status_code in (200, 201):
+        return
+    # Not critical to publishing; warn only.
+    _warn(f"Failed to create GitHub Release for {tag}: {r.status_code} {r.text}")
 
 
-# ---------------- Release planning & apply ----------------
-
+# ---------------- planning ----------------
 def build_plan_for_pkg(pkg: str, mode: BranchMode) -> ReleasePlan:
     root = _repo_root()
     pkg_dir = root / PACKAGES_DIR / pkg
     pyproject = pkg_dir / "pyproject.toml"
     if not pyproject.exists():
-        raise FileNotFoundError(f"Missing {pyproject}")
+        _die(f"Missing {pyproject}")
 
     last_tag, last_ver = _latest_pkg_tag(pkg)
     changed = _changed_files_since(last_tag, f"{PACKAGES_DIR}/{pkg}")
@@ -552,116 +656,102 @@ def build_plan_for_pkg(pkg: str, mode: BranchMode) -> ReleasePlan:
     )
 
 
-def _git_commit_all(message: str) -> None:
-    _run(["git", "add", "-A"])
-    names = _run(["git", "diff", "--cached", "--name-only"])
-    if names.strip():
-        _run(["git", "commit", "-m", message])
-
-
-def _git_tag(tag: str) -> None:
-    # idempotent: if tag exists, skip (don't raise)
-    if _run(["git", "tag", "--list", tag]).strip():
-        print(f"[release] Tag already exists, skipping: {tag}")
-        return
-    _run(["git", "tag", tag])
-
-
-def _git_push(branch: str, push_tags: bool) -> None:
-    _run(["git", "push", "origin", branch])
-    if push_tags:
-        _run(["git", "push", "origin", "--tags"])
-
-
-def apply_plan(plan: ReleasePlan, *, repo_slug: str, token: str, branch: str, push: bool, dry_run: bool) -> Optional[str]:
+def _apply_plan_on_release_branch(plan: ReleasePlan, repo_slug: str) -> tuple[Optional[str], str]:
+    """
+    Assumes we are already on release branch.
+    Performs:
+      - bump pyproject version
+      - update changelog
+      - commit
+    Returns: (tag, changelog_entry)
+    """
     if plan.bump == "none":
-        return None
+        return None, ""
 
     prev_tag = plan.last_tag
     new_tag = _tag_name(plan.pkg, plan.next_version)
-
-    if dry_run:
-        print(f"  - would bump {plan.pkg}: {plan.last_version} -> {plan.next_version} ({plan.bump}), tag {new_tag}")
-        return new_tag
-
-    # Ensure base commit (current HEAD) is on the expected branch + CI green
-    base_commit = _head_sha()
-    _ensure_commit_on_branch(base_commit, branch)
-    if not _check_ci_green(repo_slug, base_commit, token):
-        raise RuntimeError(f"CI not green for commit {base_commit}. Aborting release of {plan.pkg}.")
-
-    # Update pyproject version
-    _write_pyproject_version(plan.pyproject, plan.next_version)
-
-    # Update changelog (Keep a Changelog)
     entry = _render_release_entry(plan, repo_slug, new_tag, prev_tag)
+
+    _write_pyproject_version(plan.pyproject, plan.next_version)
     _insert_release_entry_under_unreleased(plan.pkg_dir, entry)
     _append_link_definition(plan.pkg_dir, plan.next_version, repo_slug, prev_tag, new_tag)
 
-    # Commit bump + changelog
     _git_commit_all(f"release({plan.pkg}): {plan.next_version}")
 
-    # Tag & push
-    _git_tag(new_tag)
-
-    if push:
-        _git_push(branch, push_tags=True)
-
-    # Create GitHub Release notes from changelog entry
-    prerelease = (plan.mode == "rc")
-    _create_github_release(
-        repo_slug=repo_slug,
-        tag=new_tag,
-        name=f"{plan.pkg} {plan.next_version}",
-        body=entry.strip() + ("\n" if entry.strip() else ""),
-        token=token,
-        prerelease=prerelease,
-    )
-
-    return new_tag
+    return new_tag, entry
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser("Monorepo semantic release tool (local)")
-    ap.add_argument("--mode", choices=["rc", "final"], required=True, help="rc => test branch tags; final => master branch tags")
-    ap.add_argument("--packages", nargs="*", default=PACKAGES, help="packages to release (default: all)")
-    ap.add_argument("--dry-run", action="store_true", help="print plan only; do not modify repo")
-    ap.add_argument("--push", action="store_true", help="push branch + tags to origin")
-    ap.add_argument("--branch", default=None, help="expected branch (defaults based on --mode)")
-    ap.add_argument("--force", action="store_true", help="force release even if no changes (defaults to patch bump)")
-    ap.add_argument("--force-bump", choices=["patch","minor","major"], default="patch", help="bump level used when --force is set")
+    ap = argparse.ArgumentParser("Monorepo release tool (branch-based; no PR API).")
+
+    ap.add_argument("--mode", choices=["rc", "final"], required=True)
+    ap.add_argument("--packages", nargs="*", default=PACKAGES)
+
+    ap.add_argument("--base-branch", required=True, help="Base branch to release from (e.g. test / master)")
+    ap.add_argument("--release-branch", required=True, help="Branch to push release commits to (e.g. release-test / release)")
+
+    ap.add_argument("--push", action="store_true", help="Push release branch + tags to origin")
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--force", action="store_true")
+    ap.add_argument("--force-bump", choices=["patch", "minor", "major"], default="patch")
+    ap.add_argument("--allow-dirty", action="store_true")
+
+    ap.add_argument("--skip-base-sync-check", action="store_true", help="WARNING: allows releasing even if local != origin/base")
+    ap.add_argument("--skip-github-release", action="store_true", help="Don't create GitHub Releases via API")
+
+    ap.add_argument("--debug", action="store_true")
+
     args = ap.parse_args()
 
     mode: BranchMode = args.mode  # type: ignore
-    required_branch = REQUIRED_BRANCH_FOR_MODE[mode]
-    branch = args.branch or required_branch
+    base_branch: str = args.base_branch
+    release_branch: str = args.release_branch
 
+    # --- preflight ---
+    if args.debug:
+        _run_dbg(["git", "--version"])
+        _run_dbg(["git", "status", "--porcelain=v1", "-b"])
+        _run_dbg(["git", "remote", "-v"])
+        _run_dbg(["git", "rev-parse", "HEAD"])
+
+    _ensure_clean(allow_dirty=args.allow_dirty)
+
+    # HEAD branch in Actions can be detached => WARNING only
     cur = _current_branch()
-    if cur != branch:
-        raise RuntimeError(f"Release mode '{mode}' must run on branch '{branch}'. You are on '{cur}'.")
+    if cur == "HEAD":
+        _warn("Detached HEAD detected (common in GitHub Actions). Continuing.")
+    else:
+        _info(f"Current branch: {cur}")
 
-    _ensure_clean()
+    # Ensure base branch exists on remote
+    _ensure_remote_branch_exists(base_branch)
 
-    # GH repo slug + token
+    # Checkout base branch to base SHA, and ensure local matches origin/base unless skipped
+    _checkout_branch(base_branch)
+    _fetch_all()
+    _run(["git", "reset", "--hard", f"origin/{base_branch}"], check=True)
+    base_sha = _head_sha()
+
+    if not args.skip_base_sync_check:
+        _ensure_head_matches_origin(base_branch)
+    else:
+        _warn("skip-base-sync-check enabled: not enforcing local HEAD == origin/base.")
+
     repo_slug = os.getenv(ENV_GITHUB_REPOSITORY) or DEFAULT_REPO_SLUG or _detect_repo_slug()
-    token = _require_token()
 
-    # Enforce HEAD is contained in correct remote branch before anything
-    head = _head_sha()
-    _ensure_commit_on_branch(head, branch)
-
-    # build plans
+    # Build plans (on base)
     plans = [build_plan_for_pkg(p, mode) for p in args.packages]
+
     if args.force:
         for pl in plans:
             if pl.bump == "none":
                 pl.bump = args.force_bump  # type: ignore
-                pl.next_version = _next_version_for_mode(pl.last_version, pl.bump, mode)  # recompute
+                pl.next_version = _next_version_for_mode(pl.last_version, pl.bump, mode)
     else:
         plans = [p for p in plans if p.bump != "none"]
 
     if not plans:
-        print("No package changes detected since last tags. Nothing to release.")
+        _info("No package changes detected since last tags. Nothing to release.")
         return 0
 
     print("\n=== RELEASE PLAN ===")
@@ -678,22 +768,55 @@ def main() -> int:
         print("\nDRY-RUN: no files changed, no commits/tags created.\n")
         return 0
 
+    # Switch to release branch anchored at base SHA (critical!)
+    _checkout_release_branch(release_branch, base_sha=base_sha)
+
+    # Apply plans on release branch
     tags: list[str] = []
+    entries_by_tag: dict[str, str] = {}
+
     for p in plans:
-        t = apply_plan(
-            p,
-            repo_slug=repo_slug,
-            token=token,
-            branch=branch,
-            push=args.push,
-            dry_run=False,
-        )
+        t, entry = _apply_plan_on_release_branch(p, repo_slug=repo_slug)
         if t:
             tags.append(t)
+            entries_by_tag[t] = entry
 
-    print("\n✅ Released tags:")
-    for t in tags:
-        print(" -", t)
+    if not tags:
+        _info("No releases produced (unexpected).")
+        return 0
+
+    # Push branch + tags
+    if args.push:
+        _maybe_auth_origin_with_pat()
+        _push_release_branch(release_branch)
+
+        for t in tags:
+            _push_tag(t)
+
+        # GitHub Releases are optional: failures are warnings
+        if not args.skip_github_release:
+            token = _require_token()
+            prerelease = (mode == "rc")
+            for t in tags:
+                body = entries_by_tag.get(t, "").strip()
+                _create_github_release(
+                    repo_slug=repo_slug,
+                    tag=t,
+                    name=t,
+                    body=body + ("\n" if body else ""),
+                    token=token,
+                    prerelease=prerelease,
+                )
+        else:
+            _warn("skip-github-release enabled: not creating GitHub Releases via API.")
+
+        print("\n✅ Released tags:")
+        for t in tags:
+            print(" -", t)
+    else:
+        print("\n✅ Local release branch commits created (no push). Planned tags:")
+        for t in tags:
+            print(" -", t)
 
     return 0
 

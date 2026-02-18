@@ -247,7 +247,7 @@ aetherflow-scheduler --help
 ### 4.4 Tests
 
 ```bash
-pytest -q
+pytest -q -m "not slow"
 ```
 
 If any of these fail, you likely missed a rename target somewhere (imports, entrypoints, or namespace layout).

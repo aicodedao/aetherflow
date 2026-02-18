@@ -1,10 +1,13 @@
 # aetherflow (meta package)
 
+[![TestPyPI Version](https://img.shields.io/pypi/v/aetherflow.svg?label=TestPyPI&pypiBaseUrl=https://test.pypi.org)](https://test.pypi.org/project/aetherflow/)
+[![PyPI Version](https://img.shields.io/pypi/v/aetherflow)](https://pypi.org/project/aetherflow/)
+
 `aetherflow` is a **convenience meta package**.
 
 It installs:
-- `aetherflow-core` (core engine + CLI `aetherflow`)
-- `aetherflow-scheduler` (scheduler + CLI `aetherflow-scheduler`)
+- [aetherflow-core](../aetherflow-core) (core engine + CLI `aetherflow`)
+- [aetherflow-scheduler](../aetherflow-scheduler) (scheduler + CLI `aetherflow-scheduler`)
 
 It intentionally ships **no Python package code** itself (it’s just dependencies).
 
@@ -34,6 +37,7 @@ Quick sanity check:
 
 ```bash
 python -c "import aetherflow.core; import aetherflow.scheduler"
+
 aetherflow --help
 aetherflow-scheduler --help
 ```
@@ -57,8 +61,7 @@ Do:
 
 ## Docs (in this repository)
 
-Canonical docs live in `aetherflow/docs/`.
+Canonical docs live in [Aetherflow Doumentation](../../docs).
 
 Start here:
-- `aetherflow/docs/README.md`
-- `aetherflow/docs/INDEX.md`
+- [Home Docs.](../../docs/INDEX.md)

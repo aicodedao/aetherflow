@@ -1,0 +1,55 @@
+site_name: Aetherflow [Core, Scheduler]
+repo_url: https://github.com/aicodedao/aetherflow
+repo_name: aicodedao/aetherflow
+docs_dir: docs
+theme:
+  name: material
+nav:
+- Home: index.md
+- Overview: 00-overview.md
+- Quickstart: 01-quickstart.md
+- Architecture: 02-architecture.md
+- Execution Model: 03-execution-model.md
+- Skipping And Gating: 04-skipping-and-gating.md
+- Locking Guide: 05-locking-guide.md
+- Yaml Spec: 06-yaml-spec.md
+- Scheduler Yaml Guide: 07-scheduler-yaml-guide.md
+- Manifest And Bundles: 08-manifest-and-bundles.md
+- Profiles And Resources: 09-profiles-and-resources.md
+- Flow Yaml Guide: 10-flow-yaml-guide.md
+- Envs: 11-envs.md
+- Secrets: 12-secrets.md
+- Envfiles: 13-envfiles.md
+- Settings: 14-settings.md
+- Concurrency: 15-concurrency.md
+- Observability: 16-observability.md
+- State: 17-state.md
+- Plugins: 18-plugins.md
+- Connectors: 19-connectors.md
+- Steps: 20-steps.md
+- Reporting Guide: 21-reporting-guide.md
+- External Process Step: 22-external-process-step.md
+- Builtins Catalog: 23-builtins-catalog.md
+- Responsibility Model: 24-responsibility-model.md
+- Public Api And Semver: 25-public-api-and-semver.md
+- Release Process: 26-release-process.md
+- Publishing To Pypi: 27-publishing-to-pypi.md
+- Maintainer Release Checklist: 28-maintainer-release-checklist.md
+- Renaming Checklist: 29-renaming-checklist.md
+- Repo Files: 30-repo-files.md
+- Labeling Guide: 31-labeling-guide.md
+- Ci Cd: 32-ci-cd.md
+- Cli Reference: 90-cli-reference.md
+- Use Cases And Extension Notes: 91-use-cases-and-extension-notes.md
+- Demo Walkthrough: 92-demo-walkthrough.md
+- Flow In 15 Minutes: 93-flow-in-15-minutes.md
+- Strict Templating: 99-strict-templating.md
+- Failure Recovery Playbook: 404-Failure-Recovery-Playbook.md
+plugins:
+- search
+markdown_extensions:
+- pymdownx.snippets
+- admonition
+- toc:
+    permalink: true
+

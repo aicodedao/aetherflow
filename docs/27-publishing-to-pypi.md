@@ -59,8 +59,13 @@ From the root or from the core package directory (depending on repo layout).
 Assuming monorepo with subpackage:
 
 ```bash
+git fetch --tags
+git checkout aetherflow-core-v0.0.1rc1
+
 cd packages/aetherflow-core
+python -m pip install -U pip build twine
 python -m build
+
 ```
 
 This should create:
@@ -161,8 +166,13 @@ Commit changes.
 ## 2.2 Build scheduler distribution
 
 ```bash
+git fetch --tags
+git checkout aetherflow-scheduler-v0.0.1
+
 cd packages/aetherflow-scheduler
+python -m pip install -U pip build twine
 python -m build
+
 ```
 
 Artifacts:
@@ -262,8 +272,13 @@ Commit.
 ## 3.2 Build meta distribution
 
 ```bash
+git fetch --tags
+git checkout aetherflow-v0.0.1
+
 cd packages/aetherflow
+python -m pip install -U pip build twine
 python -m build
+
 ```
 
 Artifacts:

@@ -1,50 +1,94 @@
-name: Publish to PyPI (tag)
+name: Publish Final to PyPI
+run-name: "publish-pypi: ${{ github.ref_name || inputs.tag }}"
 
 on:
   push:
     tags:
       - "*-v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Exact tag to publish to PyPI (e.g. aetherflow-v0.0.1)"
+        required: true
+        type: string
 
 permissions:
-  id-token: write
   contents: read
 
+concurrency:
+  group: publish-pypi-${{ github.ref_name || inputs.tag }}
+  cancel-in-progress: false
+
 jobs:
-  publish_pypi:
-    # skip rc tags
-    if: "!contains(github.ref_name, 'rc')"
+  publish:
+    name: "PyPI: ${{ github.ref_name || inputs.tag }}"
     runs-on: ubuntu-latest
 
+    # Skip RC tags for push-triggered runs
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && !contains(github.ref_name, 'rc'))
+
     steps:
-      - name: Checkout
+      - name: Checkout repo (with tags)
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           fetch-tags: true
+
+      - name: Resolve tag
+        id: tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Publishing tag: $TAG"
+
+      - name: Checkout exact tag
+        run: |
+          git checkout "refs/tags/${{ steps.tag.outputs.tag }}"
+          git status -sb
+
+      - name: Parse package name from tag
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.tag.outputs.tag }}"
+          PKG="${TAG%%-v*}"
+          PKG_DIR="packages/$PKG"
+
+          if [ ! -f "$PKG_DIR/pyproject.toml" ]; then
+            echo "ERROR: $PKG_DIR does not contain pyproject.toml"
+            exit 1
+          fi
+
+          echo "pkg=$PKG" >> "$GITHUB_OUTPUT"
+          echo "pkg_dir=$PKG_DIR" >> "$GITHUB_OUTPUT"
+          echo "Detected package: $PKG"
+          echo "Package dir: $PKG_DIR"
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Parse package from tag
-        id: meta
-        shell: bash
-        run: |
-          TAG=${GITHUB_REF#refs/tags/}
-          PKG=${TAG%%-v*}
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
-          echo "pkg=$PKG" >> $GITHUB_OUTPUT
-          echo "pkg_dir=packages/$PKG" >> $GITHUB_OUTPUT
-
-      - name: Build dist
-        shell: bash
+      - name: Build distribution
+        working-directory: ${{ steps.meta.outputs.pkg_dir }}
         run: |
           python -m pip install -U pip build
-          cd "${{ steps.meta.outputs.pkg_dir }}"
           python -m build
+          ls -la dist
 
-      - name: Publish to PyPI (OIDC)
+      - name: Publish to PyPI (API Token)
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
           packages-dir: ${{ steps.meta.outputs.pkg_dir }}/dist
+          skip-existing: false
+

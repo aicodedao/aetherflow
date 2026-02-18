@@ -4,14 +4,20 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aetherflow"
-version = "0.1.0"
+version = "0.0.1"
 description = "AetherFlow meta package (convenience wrapper for core + scheduler)"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 dependencies = [
-  "aetherflow-core>=0.1.1",
-  "aetherflow-scheduler>=0.1.0"
+  "aetherflow-core>=0.0.1",
+  "aetherflow-scheduler>=0.0.0"
 ]
+
+[project.urls]
+"Homepage" = "https://github.com/aicodedao/aetherflow"
+"Documentation" = "https://github.com/aicodedao/aetherflow/tree/develop/docs"
+"Source" = "https://github.com/aicodedao/aetherflow/tree/develop/packages/aetherflow"
+"Bug Tracker" = "https://github.com/aicodedao/aetherflow/issues"
 
 [tool.setuptools]
 packages = []

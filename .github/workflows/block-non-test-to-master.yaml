@@ -1,0 +1,24 @@
+name: Block non-test -> master PR
+run-name: "Block non-test->master (PR): -${{ github.ref_name }}"
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  block-non-test:
+    name: block-non-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if PR source is not test
+        run: |
+          echo "PR source branch: ${{ github.head_ref }}"
+          if [ "${{ github.head_ref }}" != "test" ]; then
+            echo "::error::Only test branch can be merged into master."
+            exit 1
+          fi
