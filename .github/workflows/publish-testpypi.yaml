@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Exact tag to publish to TestPyPi (e.g. aetherflow-v0.0.1rc1)"
+        description: "Exact tag to publish to TestPyPI (e.g. aetherflow-v0.0.1rc1)"
         required: true
         type: string
 
@@ -31,22 +31,42 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
+      - name: Resolve tag
+        id: tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Publishing tag: $TAG"
+
       - name: Checkout exact tag
         run: |
-          git checkout "refs/tags/${GITHUB_REF_NAME}"
+          git checkout "refs/tags/${{ steps.tag.outputs.tag }}"
           git status -sb
-          echo "Publishing tag: ${GITHUB_REF_NAME}"
 
       - name: Parse package name from tag
         id: meta
         shell: bash
         run: |
           set -euo pipefail
-          TAG="${GITHUB_REF_NAME}"
+          TAG="${{ steps.tag.outputs.tag }}"
           PKG="${TAG%%-v*}"
+          PKG_DIR="packages/$PKG"
+
+          if [ ! -f "$PKG_DIR/pyproject.toml" ]; then
+            echo "ERROR: $PKG_DIR does not contain pyproject.toml"
+            exit 1
+          fi
+
           echo "pkg=$PKG" >> "$GITHUB_OUTPUT"
-          echo "pkg_dir=packages/$PKG" >> "$GITHUB_OUTPUT"
+          echo "pkg_dir=$PKG_DIR" >> "$GITHUB_OUTPUT"
           echo "Detected package: $PKG"
+          echo "Package dir: $PKG_DIR"
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -54,13 +74,15 @@ jobs:
           python-version: "3.11"
 
       - name: Build distribution
+        working-directory: ${{ steps.meta.outputs.pkg_dir }}
         run: |
-          python -m pip install --upgrade pip
-          pip install build twine
           python -m build
+          ls -la dist
 
-      - name: Publish to TestPyPI (API token)
+      - name: Publish to PyPI (API Token)
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          repository-url: https://test.pypi.org/legacy/
-          password: ${{ secrets.TEST_PYPI_API_TOKEN }}
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          packages-dir: ${{ steps.meta.outputs.pkg_dir }}/dist
+          skip-existing: false
+
