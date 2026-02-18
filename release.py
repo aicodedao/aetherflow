@@ -7,7 +7,6 @@ import re
 import shlex
 import subprocess
 import sys
-import time
 import urllib.parse
 from dataclasses import dataclass
 from datetime import date
@@ -136,7 +135,7 @@ def _run_dbg(cmd: Iterable[str], *, cwd: str | None = None, env: dict | None = N
     return p
 
 
-def _run(cmd: list[str], cwd: str | Path | None = None, *, check: bool = True) -> str:
+def _run(cmd: list[str], cwd: str | Path | None = None, *, check: bool = True, **kwargs) -> str:
     p = subprocess.run(
         cmd,
         cwd=str(cwd) if cwd else None,
@@ -144,7 +143,16 @@ def _run(cmd: list[str], cwd: str | Path | None = None, *, check: bool = True) -
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
+        capture_output=True,
+        **kwargs,
     )
+    if check and p.returncode != 0:
+        raise subprocess.CalledProcessError(
+            p.returncode,
+            p.args,
+            output=p.stdout,
+            stderr=p.stderr,
+        )
     return p.stdout.strip()
 
 
@@ -217,7 +225,7 @@ def _checkout_release_branch(release_branch: str, *, base_sha: str) -> None:
     p = subprocess.run(["git", "show-ref", "--verify", f"refs/heads/{release_branch}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if p.returncode == 0:
         _run(["git", "checkout", release_branch], check=True)
-        _run(["git", "reset", "--hard", base_sha], check=True)
+        _run(["git", "merge", "--ff-only", base_sha], check=True)
         return
     _run(["git", "checkout", "-b", release_branch, base_sha], check=True)
 
@@ -227,7 +235,7 @@ def _push_release_branch(release_branch: str) -> None:
     Push release branch. If it already exists remotely, overwrite it only if fast-forward.
     """
     # -u is fine even if exists; git handles it. If branch protection blocks it, that's a hard fail.
-    _run(["git", "push", "-u", "origin", release_branch, "--verbose"], check=True)
+    _run(["git", "push", "-u", "origin", release_branch, "--force-with-lease", "--verbose"], check=True)
 
 
 def _push_tag(tag: str) -> None:
