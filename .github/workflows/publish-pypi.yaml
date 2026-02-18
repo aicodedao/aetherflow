@@ -1,21 +1,29 @@
 name: Publish Final to PyPI
+run-name: "publish-pypi: ${{ github.ref_name || inputs.tag }}"
 
 on:
   push:
     tags:
-      - "*-v*"    
+      - "*-v*"
+      - "!*-v*rc*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Exact tag to publish to PyPi (e.g. aetherflow-v0.0.1)"
+        required: true
+        type: string
 
 permissions:
   id-token: write
   contents: read
 
 concurrency:
-  group: publish-pypi
+  group: publish-pypi-${{ github.ref_name || inputs.tag }}
   cancel-in-progress: false
 
 jobs:
   publish:
-    if: ${{ !contains(github.ref_name, 'rc') }}
+    name: "PyPi: ${{ github.ref_name || inputs.tag }}"
     runs-on: ubuntu-latest
 
     steps:
@@ -24,8 +32,11 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Checkout tag
-        run: git checkout "refs/tags/${GITHUB_REF_NAME}"
+      - name: Checkout exact tag
+        run: |
+          git checkout "refs/tags/${GITHUB_REF_NAME}"
+          git status -sb
+          echo "Publishing tag: ${GITHUB_REF_NAME}"
 
       - name: Parse package from tag
         id: meta
@@ -36,6 +47,7 @@ jobs:
           PKG="${TAG%%-v*}"
           echo "pkg=$PKG" >> "$GITHUB_OUTPUT"
           echo "pkg_dir=packages/$PKG" >> "$GITHUB_OUTPUT"
+          echo "Detected package: $PKG"
 
       - uses: actions/setup-python@v5
         with:
@@ -45,4 +57,9 @@ jobs:
         run: |
           python -m pip install -U pip build
           cd "${{ steps.meta.outputs.pkg_dir }}"
-          py
+          python -m build
+
+      - name: Publish to PyPI (OIDC)
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: ${{ steps.meta.outputs.pkg_dir }}/dist

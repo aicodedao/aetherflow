@@ -1,4 +1,5 @@
 name: Auto Release (RC) - test -> release-test + tags
+run-name: "Auto Release RC: ${{ github.ref_name }}"
 
 on:
   push:
@@ -9,7 +10,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: auto-release-rc-test
+  group: auto-release-rc-test-${{ github.ref_name }}
   cancel-in-progress: false
 
 jobs:

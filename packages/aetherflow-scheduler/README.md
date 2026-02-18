@@ -1,5 +1,8 @@
 # aetherflow-scheduler
 
+[![TestPyPI Version](https://img.shields.io/pypi/v/aetherflow-scheduler.svg?label=TestPyPI&pypiBaseUrl=https://test.pypi.org)](https://test.pypi.org/project/aetherflow-scheduler/)
+[![PyPI Version](https://img.shields.io/pypi/v/aetherflow-scheduler)](https://pypi.org/project/aetherflow-scheduler/)
+
 `aetherflow-scheduler` is a **thin cron-style scheduler** for AetherFlow, built on **APScheduler**.
 
 It reads a YAML file and triggers `aetherflow` runs on a schedule. The design goal is simplicity:
@@ -16,7 +19,7 @@ This distribution ships the CLI **`aetherflow-scheduler`**.
 pip install aetherflow-scheduler
 ```
 
-This depends on `aetherflow-core` and installs it automatically.
+This depends on [aetherflow-core](../aetherflow-core) and installs it automatically.
 
 Python: **3.10+**.
 
@@ -77,10 +80,10 @@ AetherFlow itself can use **locks/state** to avoid overlapping executions and to
 Scheduler is intentionally minimal: it triggers runs; the “safety” lives in core.
 
 Relevant docs:
-- `aetherflow/docs/05-locking-guide.md`
-- `aetherflow/docs/17-state.md`
-- `aetherflow/docs/15-concurrency.md`
-- `aetherflow/docs/404-Failure-Recovery-Playbook.md`
+- [Locking guide](../../docs/05-locking-guide.md)
+- [State](../../docs/17-state.md)
+- [Concurrency](../../docs/15-concurrency.md)
+- [Failure Recovery Playbook](../../docs/404-Failure-Recovery-Playbook.md)
 
 ---
 
@@ -100,8 +103,7 @@ Do **not** rely on ambiguous imports like `aetherflow.x`.
 ## Docs (in this repository)
 
 Scheduler-specific doc:
-- `aetherflow/docs/07-scheduler-yaml-guide.md`
+- [Scheduler yaml guide](../../docs/07-scheduler-yaml-guide.md)
 
 Start here:
-- `aetherflow/docs/README.md`
-- `aetherflow/docs/INDEX.md`
+- [Home Docs.](../../docs/INDEX.md)

@@ -1,4 +1,5 @@
 name: Block non-test -> master PR
+run-name: "Block non-test->master (PR): -${{ github.ref_name }}"
 
 on:
   pull_request:

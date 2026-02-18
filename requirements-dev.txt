@@ -3,3 +3,7 @@ requests
 build
 twine
 typing_extensions
+pyyaml
+mkdocs
+mkdocs-material
+pymdown-extensions

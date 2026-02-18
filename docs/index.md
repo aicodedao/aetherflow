@@ -1,4 +1,11 @@
-# INDEX — AetherFlow Documentation
+# AetherFlow Documentation
+
+[![GitHub Repo](https://img.shields.io/badge/GitHub-aetherflow-blue?logo=github)](https://github.com/aicodedao/aetherflow)
+[![CI](https://github.com/aicodedao/aetherflow/actions/workflows/ci.yaml/badge.svg)](https://github.com/aicodedao/aetherflow/blob/develop/.github/workflows/ci.yaml)
+[![PyPI](https://img.shields.io/pypi/v/aetherflow-core)](https://pypi.org/project/aetherflow-core/)
+[![Python](https://img.shields.io/pypi/pyversions/aetherflow-core)](https://pypi.org/project/aetherflow-core/)
+[![License](https://img.shields.io/badge/license-Internal-blue)](https://github.com/aicodedao/aetherflow/blob/develop/LICENSE)
+
 
 This is the **canonical documentation index** for AetherFlow.
 
@@ -29,6 +36,32 @@ Anything else fails fast.
 ---
 
 # Target Users
+
+## Fast Reading Path
+
+If you only have 20–30 minutes, read in this order:
+
+1) Project overview  
+   → **[00-overview.md](00-overview.md)**  
+   What AetherFlow is (and is not).
+
+2) Architecture decisions  
+   → **[02-architecture.md](02-architecture.md)**  
+   Single Resolver Architecture, strict templating, config-over-code.
+
+3) Install → run → bundle → scheduler  
+   → **[01-quickstart.md](01-quickstart.md)**  
+   Get something running immediately.
+
+4) Write real flows safely  
+   → **[10-flow-yaml-guide.md](10-flow-yaml-guide.md)**  
+   Jobs, steps, gating, locks, retries, resume.
+
+5) 15-minute practical flow  
+   → **[93-flow-in-15-minutes.md](93-flow-in-15-minutes.md)**  
+   Zero theory. Just run it.
+
+---
 
 ## New user
 

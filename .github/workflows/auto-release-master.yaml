@@ -1,4 +1,5 @@
 name: Auto Release (Final) - master -> release + tags
+run-name: "Auto Release Final: ${{ github.ref_name }}"
 
 on:
   push:
@@ -9,7 +10,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: auto-release-final-master
+  group: auto-release-final-master-${{ github.ref_name }}
   cancel-in-progress: false
 
 jobs:

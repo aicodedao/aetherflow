@@ -1,5 +1,8 @@
 # aetherflow-core
 
+[![TestPyPI Version](https://img.shields.io/pypi/v/aetherflow-core.svg?label=TestPyPI&pypiBaseUrl=https://test.pypi.org)](https://test.pypi.org/project/aetherflow-core/)
+[![PyPI Version](https://img.shields.io/pypi/v/aetherflow-core)](https://pypi.org/project/aetherflow-core/)
+
 `aetherflow-core` is a **YAML-first workflow engine** for ops-style ETL/ELT/automation: run-once jobs you can schedule anywhere (cron, Kubernetes, Airflow, Nomad, systemd, etc.).
 
 It focuses on being:
@@ -76,7 +79,7 @@ aetherflow run --flow-yaml flow.yaml --flow-job main
 ```
 
 Full command reference (in this repo):
-- `aetherflow/docs/90-cli-reference.md`
+- [Cli. Reference](../../docs/90-cli-reference.md)
 
 ---
 
@@ -100,38 +103,39 @@ Public API and SemVer policy:
 
 ---
 
-## Extending AetherFlow (custom steps)
+## Extending AetherFlow 
 
 High-level flow:
-1) Implement a `Step` subclass (or a compatible callable/factory, depending on your plugin style).
+1) Implement a `Connector`, `Step` subclass (or a compatible callable/factory, depending on your plugin style).
+2) Register it with `register_connector(...)`.
 2) Register it with `register_step(...)`.
 3) Reference it by `type:` in YAML.
 
 Plugin guide:
-- `aetherflow/docs/18-plugins.md`
-- `aetherflow/docs/20-steps.md`
+- [Plugins](../../docs/18-plugins.md)
+- [Connectors](../../docs/19-connectors.md)
+- [Steps](../../docs/20-steps.md)
 
 ---
 
 ## YAML spec & guides
 
 Start here:
-- `aetherflow/docs/06-yaml-spec.md`
-- `aetherflow/docs/10-flow-yaml-guide.md`
-- `aetherflow/docs/93-flow-in-15-minutes.md`
+- [Yaml Spec.](../../docs/06-yaml-spec.md)
+- [Flow yaml guide](../../docs/10-flow-yaml-guide.md)
+- [Flow in 15-minutes](../../docs/93-flow-in-15-minutes.md)
 
 Built-in catalog:
-- `aetherflow/docs/23-builtins-catalog.md`
-- `aetherflow/docs/22-external-process-step.md`
+- [Step - External process](../../docs/22-external-process-step.md)
+- [Builtins Catalog](../../docs/23-builtins-catalog.md)
 
 ---
 
 ## Docs (in this repository)
 
-Canonical docs live in `aetherflow/docs/`.
+Canonical docs live in [Aetherflow Doumentation](../../docs).
 
-Start with:
-- `aetherflow/docs/README.md`
-- `aetherflow/docs/INDEX.md`
+Start here:
+- [Home Docs.](../../docs/INDEX.md)
 
-If you need scheduling, install **`aetherflow-scheduler`**.
+If you need scheduling, install **[aetherflow-scheduler](../aetherflow-scheduler)**.

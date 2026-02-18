@@ -1,20 +1,28 @@
 name: Publish RC to TestPyPI
+run-name: "publish-testpypi: ${{ github.ref_name || inputs.tag }}"
 
 on:
   push:
     tags:
       - "*-v*rc*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Exact tag to publish to TestPyPi (e.g. aetherflow-v0.0.1rc1)"
+        required: true
+        type: string
 
 permissions:
   id-token: write
   contents: read
 
 concurrency:
-  group: publish-testpypi
+  group: publish-testpypi-${{ github.ref_name || inputs.tag }}
   cancel-in-progress: false
 
 jobs:
   publish:
+    name: "TestPyPI: ${{ github.ref_name || inputs.tag }}"
     runs-on: ubuntu-latest
 
     steps:
