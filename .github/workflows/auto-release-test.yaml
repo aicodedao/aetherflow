@@ -39,27 +39,9 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git branch
 
-      - name: Debug git auth + push capability
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euxo pipefail
-          git status
-          git remote -v
-          git branch -vv
-          git config --get-all http.https://github.com/.extraheader || true
-          
-          # Show who we are
-          git config user.name || true
-          git config user.email || true
-          
-          # Force verbose tracing for one push attempt (won't leak token)
-          GIT_TRACE=1 GIT_CURL_VERBOSE=1 git push -u origin release-test 2>&1 | sed -E 's/(x-access-token:)[^@]+/\1***REDACTED***/g'
-
       - name: Release (RC) on release-test branch + tags
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
-          python release.py --mode rc --base-branch test --release-branch release-test --push
+          python release.py --mode rc --debug --base-branch test --release-branch release-test --push
