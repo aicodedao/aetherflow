@@ -167,6 +167,9 @@ def _run(
     p = subprocess.run(cmd, **run_kwargs)
 
     if check and p.returncode != 0:
+        msg = (getattr(p, "stderr", None) or "").strip()
+        if msg:
+            raise RuntimeError(f"Command failed ({p.returncode}): {cmd}\n{msg}")
         raise subprocess.CalledProcessError(
             p.returncode,
             p.args,
