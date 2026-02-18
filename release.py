@@ -246,13 +246,13 @@ def _checkout_branch(branch: str) -> None:
 
 def _is_merge_commit(sha: str) -> bool:
     p = _run(["git", "rev-list", "--parents", "-n", "1", sha], check=True)
-    parts = (p.stdout or "").strip().split()
+    parts = (p or "").strip().split()
     # format: <sha> <parent1> <parent2> ...
     return len(parts) > 2
 
 def _second_parent(sha: str) -> str:
     p = _run(["git", "rev-parse", f"{sha}^2"], check=True)
-    return (p.stdout or "").strip()
+    return (p or "").strip()
 
 def _checkout_release_branch(release_branch: str, *, base_sha: str) -> None:
     """
