@@ -1,10 +1,9 @@
-name: Publish to TestPyPI (after release workflow)
+name: Publish RC to TestPyPI
 
 on:
-  workflow_run:
-    workflows:
-      - "Auto Release (RC) - test -> release-test + tags"
-    types: [completed]
+  push:
+    tags:
+      - "*-v*rc*"
 
 permissions:
   id-token: write
@@ -15,45 +14,39 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  publish_testpypi:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+  publish:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo (default branch OK)
+      - name: Checkout repo (with tags)
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Figure out newest rc tag(s) from this run
+      - name: Checkout exact tag
+        run: |
+          git checkout "refs/tags/${GITHUB_REF_NAME}"
+          git status -sb
+          echo "Publishing tag: ${GITHUB_REF_NAME}"
+
+      - name: Parse package name from tag
         id: meta
         shell: bash
         run: |
           set -euo pipefail
-          git fetch --tags origin
-
-          # get newest rc-tag on creatordate (top 1)
-          TAG=$(git for-each-ref --sort=-creatordate --format='%(refname:short)' refs/tags | grep -E '.+-v.+rc[0-9]+$' | head -n 1)
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
-
-          PKG=${TAG%%-v*}
-          echo "pkg=$PKG" >> $GITHUB_OUTPUT
-          echo "pkg_dir=packages/$PKG" >> $GITHUB_OUTPUT
-
-      - name: Checkout exact tag
-        shell: bash
-        run: |
-          git checkout "refs/tags/${{ steps.meta.outputs.tag }}"
-          git status -sb
+          TAG="${GITHUB_REF_NAME}"
+          PKG="${TAG%%-v*}"
+          echo "pkg=$PKG" >> "$GITHUB_OUTPUT"
+          echo "pkg_dir=packages/$PKG" >> "$GITHUB_OUTPUT"
+          echo "Detected package: $PKG"
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Build dist
-        shell: bash
+      - name: Build distribution
         run: |
           python -m pip install -U pip build
           cd "${{ steps.meta.outputs.pkg_dir }}"
