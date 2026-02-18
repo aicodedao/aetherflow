@@ -244,6 +244,16 @@ def _checkout_branch(branch: str) -> None:
     _run(["git", "checkout", branch], check=True)
 
 
+def _is_merge_commit(sha: str) -> bool:
+    p = _run(["git", "rev-list", "--parents", "-n", "1", sha], check=True)
+    parts = (p.stdout or "").strip().split()
+    # format: <sha> <parent1> <parent2> ...
+    return len(parts) > 2
+
+def _second_parent(sha: str) -> str:
+    p = _run(["git", "rev-parse", f"{sha}^2"], check=True)
+    return (p.stdout or "").strip()
+
 def _checkout_release_branch(release_branch: str, *, base_sha: str) -> None:
     """
     Create/update release branch to point at base_sha and check it out.
@@ -251,6 +261,9 @@ def _checkout_release_branch(release_branch: str, *, base_sha: str) -> None:
     - If branch exists locally: reset it to base_sha.
     - If not: create it at base_sha.
     """
+    if _is_merge_commit(base_sha):
+        _info(f"Base SHA {base_sha} is a merge commit; using second parent to satisfy repo rules.")
+        base_sha = _second_parent(base_sha)
     # does local branch exist?
     p = subprocess.run(["git", "show-ref", "--verify", f"refs/heads/{release_branch}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if p.returncode == 0:
