@@ -76,6 +76,7 @@ jobs:
       - name: Build distribution
         working-directory: ${{ steps.meta.outputs.pkg_dir }}
         run: |
+          python -m pip install -U pip build
           python -m build
           ls -la dist
 
