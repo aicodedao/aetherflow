@@ -590,6 +590,16 @@ def _maybe_auth_origin_with_pat() -> None:
     _info("origin now: " + _run(["git", "remote", "get-url", "origin"], check=True))
 
 
+def _maybe_auth_origin_with_pat() -> None:
+    pat = os.getenv(ENV_RELEASE_PAT)
+    if not pat:
+        return
+    repo = os.getenv(ENV_GITHUB_REPOSITORY) or DEFAULT_REPO_SLUG
+    url = f"https://x-access-token:{pat}@github.com/{repo}.git"
+    _info("Using RELEASE_PAT for git pushes (enables tag-triggered publish workflows).")
+    _run(["git", "remote", "set-url", "origin", url], check=True)
+
+
 def _github_headers(token: str) -> dict:
     return {"Authorization": f"token {token}", "Accept": "application/vnd.github+json"}
 
