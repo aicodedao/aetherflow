@@ -42,7 +42,7 @@ jobs:
       - name: Release (RC) on release-test branch + tags
         env:
           RELEASE_PAT: ${{ secrets.aetherflow-release-token }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          #GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           python release.py --mode rc --debug --base-branch test --release-branch release-test --push

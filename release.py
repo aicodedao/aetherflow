@@ -567,10 +567,17 @@ def _detect_repo_slug() -> str:
 
 
 def _require_token() -> str:
+    # Prefer PAT so GitHub Release shows real actor (and avoids bot-only behavior)
+    pat = os.getenv(ENV_RELEASE_PAT)
+    if pat:
+        return pat
+
     tok = os.getenv(ENV_GITHUB_TOKEN)
-    if not tok:
-        _die(f"{ENV_GITHUB_TOKEN} is required (used for GitHub Releases API).")
-    return tok
+    if tok:
+        return tok
+
+    _die(f"{ENV_RELEASE_PAT} or {ENV_GITHUB_TOKEN} is required.")
+    raise RuntimeError("unreachable")
 
 
 def _maybe_auth_origin_with_pat() -> None:
@@ -579,8 +586,8 @@ def _maybe_auth_origin_with_pat() -> None:
         return
     repo = os.getenv(ENV_GITHUB_REPOSITORY) or DEFAULT_REPO_SLUG
     url = f"https://x-access-token:{pat}@github.com/{repo}.git"
-    _info("Using RELEASE_PAT for git pushes (enables tag-triggered publish workflows).")
     _run(["git", "remote", "set-url", "origin", url], check=True)
+    _info("origin now: " + _run(["git", "remote", "get-url", "origin"], check=True))
 
 
 def _github_headers(token: str) -> dict:
