@@ -42,7 +42,7 @@ jobs:
       - name: Release (Final) on release branch + tags
         env:
           RELEASE_PAT: ${{ secrets.aetherflow-release-token }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          #GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           python release.py --mode final --base-branch master --release-branch release --push
