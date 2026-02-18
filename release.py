@@ -31,6 +31,7 @@ DEFAULT_BUMP_IF_CHANGES: Bump = "patch"
 # tags like: <pkg>-v0.1.0 / <pkg>-v0.1.0rc1
 TAG_PREFIX_FMT = "{pkg}-v"
 
+ENV_RELEASE_PAT = "RELEASE_PAT"
 ENV_GITHUB_TOKEN = "GITHUB_TOKEN"
 ENV_GITHUB_REPOSITORY = "GITHUB_REPOSITORY"
 DEFAULT_REPO_SLUG = "aicodedao/aetherflow"
@@ -140,7 +141,6 @@ def _run(
         cwd: str | Path | None = None,
         *,
         check: bool = True,
-        debug: bool = False,
         **kwargs,
 ) -> str:
     """
@@ -165,15 +165,6 @@ def _run(
         run_kwargs["capture_output"] = True
 
     p = subprocess.run(cmd, **run_kwargs)
-
-    if debug:
-        print("$", " ".join(cmd))
-        if p.stdout:
-            print("--- stdout ---")
-            print(p.stdout)
-        if p.stderr:
-            print("--- stderr ---")
-            print(p.stderr)
 
     if check and p.returncode != 0:
         raise subprocess.CalledProcessError(
@@ -278,7 +269,7 @@ def _push_release_branch(release_branch: str) -> None:
     Push release branch. If it already exists remotely, overwrite it only if fast-forward.
     """
     # -u is fine even if exists; git handles it. If branch protection blocks it, that's a hard fail.
-    _run(["git", "push", "-u", "origin", release_branch, "--force-with-lease", "--verbose"], check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, debug=True)
+    _run(["git", "push", "-u", "origin", release_branch, "--force-with-lease", "--verbose"], check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
 
 def _push_tag(tag: str) -> None:
@@ -582,6 +573,16 @@ def _require_token() -> str:
     return tok
 
 
+def _maybe_auth_origin_with_pat() -> None:
+    pat = os.getenv(ENV_RELEASE_PAT)
+    if not pat:
+        return
+    repo = os.getenv(ENV_GITHUB_REPOSITORY) or DEFAULT_REPO_SLUG
+    url = f"https://x-access-token:{pat}@github.com/{repo}.git"
+    _info("Using RELEASE_PAT for git pushes (enables tag-triggered publish workflows).")
+    _run(["git", "remote", "set-url", "origin", url], check=True)
+
+
 def _github_headers(token: str) -> dict:
     return {"Authorization": f"token {token}", "Accept": "application/vnd.github+json"}
 
@@ -766,6 +767,7 @@ def main() -> int:
 
     # Push branch + tags
     if args.push:
+        _maybe_auth_origin_with_pat()
         _push_release_branch(release_branch)
 
         for t in tags:

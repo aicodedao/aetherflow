@@ -35,11 +35,13 @@ jobs:
 
       - name: Set git identity
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "release_bat"
+          git config user.email "release_bat@users.noreply.github.com"
+          git branch
 
       - name: Release (Final) on release branch + tags
         env:
+          RELEASE_PAT: ${{ secrets.aetherflow-release-token }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
