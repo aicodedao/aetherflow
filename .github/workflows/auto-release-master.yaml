@@ -33,16 +33,21 @@ jobs:
           python -m pip install -U pip
           pip install requests
 
-      - name: Set git identity
+      - name: Force PAT for git pushes
+        shell: bash
+        env:
+          RELEASE_PAT: ${{ secrets.AETHERFLOW_RELEASE_PAT }}
         run: |
-          git config user.name "release_bat"
-          git config user.email "release_bat@users.noreply.github.com"
+          set -euxo pipefail
+          git config --unset-all http.https://github.com/.extraheader || true
+          git remote set-url origin "https://x-access-token:${RELEASE_PAT}@github.com/${GITHUB_REPOSITORY}.git"
+          git remote -v
           git branch
 
       - name: Release (Final) on release branch + tags
         env:
-          RELEASE_PAT: ${{ secrets.aetherflow-release-token }}
-          #GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_PAT: ${{ secrets.AETHERFLOW_RELEASE_PAT }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           python release.py --mode final --base-branch master --release-branch release --push
