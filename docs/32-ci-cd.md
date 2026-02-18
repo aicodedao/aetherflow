@@ -159,7 +159,7 @@ on:
 
 jobs:
   publish:
-    if: ${{ !contains(github.ref_name, 'rc') }}
+    if: "$" + "{" + "{" + !contains(github.ref_name, 'rc') "}" + "}"
 ```
 
 Each tag corresponds to a single package in the monorepo:
@@ -191,7 +191,7 @@ To prevent infinite loops:
 Skip release job if triggered by bot:
 
 ```yaml
-if: ${{ github.actor != 'github-actions[bot]' }}
+if: "$" + "{" + "{" + github.actor != 'github-actions[bot]' + "}" + "}"
 ```
 
 ### Option B — Commit Message Guard
@@ -270,7 +270,7 @@ To avoid overlapping release runs:
 
 ```yaml
 concurrency:
-  group: auto-release-${{ github.ref }}
+  group: auto-release-"$" + "{" + "{" + github.ref + "}" + "}"
   cancel-in-progress: true
 ```
 

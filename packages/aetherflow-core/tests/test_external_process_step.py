@@ -21,6 +21,7 @@ def _ctx(settings, tmp: Path):
         state=state,
         resources={},
         connectors={},
+        env=os.environ
     )
 
 
