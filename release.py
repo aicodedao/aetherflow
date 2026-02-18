@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -22,31 +23,35 @@ Bump = Literal["none", "patch", "minor", "major"]
 PACKAGES = ["aetherflow", "aetherflow-core", "aetherflow-scheduler"]
 PACKAGES_DIR = "packages"
 
-# breaking bumps MINOR (not major) per your setup
+# breaking bumps MINOR (not major) per your preference
 BREAKING_BUMPS: Bump = "minor"
 
-# when there are changes but no conventional commit signals
+# changes exist but no conventional commit signals
 DEFAULT_BUMP_IF_CHANGES: Bump = "patch"
 
 # tags like: <pkg>-v0.1.0 / <pkg>-v0.1.0rc1
 TAG_PREFIX_FMT = "{pkg}-v"
 
-# required branches for each mode (can override via --branch)
-REQUIRED_BRANCH_FOR_MODE = {"rc": "test", "final": "master"}
-
-# ---- tokens (IMPORTANT) ----
-# If you use the default Actions GITHUB_TOKEN to create tags/refs,
-# GitHub may NOT trigger other workflows (publish-on-tag) to avoid infinite loops.
-# Best practice: create a PAT / fine-grained token that has "contents:write" + "workflow" perms,
-# store as secret RELEASE_TOKEN, and set env RELEASE_TOKEN in workflows.
-ENV_RELEASE_TOKEN = "RELEASE_TOKEN"  # preferred
-ENV_GITHUB_TOKEN = "GITHUB_TOKEN"  # fallback (works for PR/merge, but may NOT trigger publish workflow)
-ENV_GITHUB_REPOSITORY = "GITHUB_REPOSITORY"  # usually "owner/repo" in Actions
-
+ENV_GITHUB_TOKEN = "GITHUB_TOKEN"
+ENV_GITHUB_REPOSITORY = "GITHUB_REPOSITORY"
 DEFAULT_REPO_SLUG = "aicodedao/aetherflow"
 # --------------------------------------
 
 
+# ---------------- logging helpers ----------------
+def _warn(msg: str) -> None:
+    print(f"[WARN] {msg}", file=sys.stderr)
+
+
+def _info(msg: str) -> None:
+    print(f"[INFO] {msg}", file=sys.stderr)
+
+
+def _die(msg: str) -> None:
+    raise RuntimeError(msg)
+
+
+# ---------------- data models ----------------
 @dataclass(frozen=True)
 class Version:
     major: int
@@ -90,7 +95,7 @@ class CommitEntry:
     sha: str
     subject: str
     body: str
-    typ: str  # feat/fix/perf/docs/refactor/chore/ci/build/test/other
+    typ: str
     scope: Optional[str]
     breaking: bool
 
@@ -109,18 +114,33 @@ class ReleasePlan:
     changed_files: list[str]
 
 
-# ---------------- misc helpers ----------------
-def _env(name: str, default: str = "") -> str:
-    v = os.environ.get(name)
-    return v if v is not None and v != "" else default
+# ---------------- git helpers ----------------
+def _run_dbg(cmd: Iterable[str], *, cwd: str | None = None, env: dict | None = None) -> subprocess.CompletedProcess:
+    cmd = list(cmd)
+    print("\n$ " + " ".join(shlex.quote(x) for x in cmd), file=sys.stderr)
+    p = subprocess.run(
+        cmd,
+        cwd=cwd,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    print(f"[exit={p.returncode}]", file=sys.stderr)
+    if p.stdout:
+        print("\n--- stdout ---", file=sys.stderr)
+        print(p.stdout.rstrip(), file=sys.stderr)
+    if p.stderr:
+        print("\n--- stderr ---", file=sys.stderr)
+        print(p.stderr.rstrip(), file=sys.stderr)
+    return p
 
 
-# ---------------- Git helpers ----------------
-def _run(cmd: list[str], cwd: str | Path | None = None) -> str:
+def _run(cmd: list[str], cwd: str | Path | None = None, *, check: bool = True) -> str:
     p = subprocess.run(
         cmd,
         cwd=str(cwd) if cwd else None,
-        check=True,
+        check=check,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -132,189 +152,107 @@ def _repo_root() -> Path:
     return Path(_run(["git", "rev-parse", "--show-toplevel"])).resolve()
 
 
-def _ensure_clean(*, allow_dirty: bool = False) -> None:
-    st = _run(["git", "status", "--porcelain"])
+def _ensure_clean(*, allow_dirty: bool) -> None:
+    st = _run(["git", "status", "--porcelain"], check=True)
     if st.strip() and not allow_dirty:
-        raise RuntimeError(f"Working tree dirty. Commit/stash first.\n{st}")
+        _die(f"Working tree dirty. Commit/stash first.\n{st}")
+
+
+def _head_sha() -> str:
+    return _run(["git", "rev-parse", "HEAD"])
 
 
 def _current_branch() -> str:
-    return _run(["git", "rev-parse", "--abbrev-ref", "HEAD"])
-
-
-def _head_sha(ref: str = "HEAD") -> str:
-    return _run(["git", "rev-parse", ref])
+    # In Actions checkout can be detached. Treat as WARNING; we should not hard-fail.
+    b = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"])
+    return b
 
 
 def _fetch_all() -> None:
-    _run(["git", "fetch", "origin", "+refs/heads/*:refs/remotes/origin/*"])
-    _run(["git", "fetch", "--tags", "origin"])
+    _run(["git", "fetch", "origin", "+refs/heads/*:refs/remotes/origin/*"], check=True)
+    _run(["git", "fetch", "--tags", "origin"], check=True)
 
 
-def _remote_branches_containing(commit: str) -> list[str]:
-    out = _run(["git", "branch", "-r", "--contains", commit])
-    return [x.strip() for x in out.splitlines() if x.strip()]
+def _ensure_remote_branch_exists(branch: str) -> None:
+    _fetch_all()
+    out = _run(["git", "ls-remote", "--heads", "origin", branch], check=True)
+    if not out.strip():
+        _die(f"Remote branch origin/{branch} not found.")
 
 
-def _ensure_commit_on_branch(commit: str, branch: str) -> None:
+def _origin_sha(branch: str) -> str:
+    _ensure_remote_branch_exists(branch)
+    return _run(["git", "rev-parse", f"origin/{branch}"], check=True)
+
+
+def _ensure_head_matches_origin(branch: str) -> None:
     """
-    Enforce "origin/<branch> contains commit".
-    Use ONLY for base branch commit BEFORE making release commits.
+    Critical: base branch HEAD must match origin/<branch>.
+    This prevents releasing from stale local state.
     """
     _fetch_all()
-    branches = _remote_branches_containing(commit)
-    target = f"origin/{branch}"
-    if target not in branches:
-        msg = "\n".join(branches) if branches else "(none)"
-        raise RuntimeError(
-            f"Commit {commit} is NOT contained in {target}. Aborting.\n"
-            f"Remote branches containing commit:\n{msg}"
+    local = _head_sha()
+    remote = _origin_sha(branch)
+    if local != remote:
+        _die(
+            f"Base branch mismatch:\n"
+            f"- local HEAD:  {local}\n"
+            f"- origin/{branch}: {remote}\n"
+            f"Checkout the branch from origin and retry."
         )
 
 
-def _git_branch_exists_local(branch: str) -> bool:
-    p = subprocess.run(
-        ["git", "show-ref", "--verify", f"refs/heads/{branch}"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        text=True,
-    )
-    return p.returncode == 0
+def _checkout_branch(branch: str) -> None:
+    _run(["git", "checkout", branch], check=True)
 
 
-def _git_checkout_or_create_branch_from(branch: str, base_ref: str) -> None:
+def _checkout_release_branch(release_branch: str, *, base_sha: str) -> None:
     """
-    Idempotent:
-    - if branch exists: checkout + reset to base_ref
-    - else: create from base_ref
-    """
-    _run(["git", "checkout", base_ref])
-    if _git_branch_exists_local(branch):
-        _run(["git", "checkout", branch])
-        _run(["git", "reset", "--hard", base_ref])
-        return
-    _run(["git", "checkout", "-b", branch, base_ref])
+    Create/update release branch to point at base_sha and check it out.
 
-
-def _git_push_branch_upsert(branch: str) -> None:
+    - If branch exists locally: reset it to base_sha.
+    - If not: create it at base_sha.
     """
-    If first time: push -u
-    If already exists on remote: force-with-lease to update safely
-    """
-    p = subprocess.run(
-        ["git", "ls-remote", "--exit-code", "--heads", "origin", branch],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        text=True,
-    )
+    # does local branch exist?
+    p = subprocess.run(["git", "show-ref", "--verify", f"refs/heads/{release_branch}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if p.returncode == 0:
-        _run(["git", "push", "--force-with-lease", "origin", f"HEAD:refs/heads/{branch}"])
-    else:
-        _run(["git", "push", "-u", "origin", branch])
+        _run(["git", "checkout", release_branch], check=True)
+        _run(["git", "reset", "--hard", base_sha], check=True)
+        return
+    _run(["git", "checkout", "-b", release_branch, base_sha], check=True)
+
+
+def _push_release_branch(release_branch: str) -> None:
+    """
+    Push release branch. If it already exists remotely, overwrite it only if fast-forward.
+    """
+    # -u is fine even if exists; git handles it. If branch protection blocks it, that's a hard fail.
+    _run(["git", "push", "-u", "origin", release_branch], check=True)
+
+
+def _push_tag(tag: str) -> None:
+    # idempotent-ish: push only if not on remote
+    out = _run(["git", "ls-remote", "--tags", "origin", f"refs/tags/{tag}"], check=True)
+    if out.strip():
+        _info(f"Remote tag already exists, skipping: {tag}")
+        return
+    _run(["git", "tag", tag], check=True)
+    _run(["git", "push", "origin", tag], check=True)
 
 
 def _git_commit_all(message: str) -> None:
-    _run(["git", "add", "-A"])
-    names = _run(["git", "diff", "--cached", "--name-only"])
+    _run(["git", "add", "-A"], check=True)
+    names = _run(["git", "diff", "--cached", "--name-only"], check=True)
     if names.strip():
-        _run(["git", "commit", "-m", message])
-
-
-def _make_release_branch_name(*, mode: BranchMode, base_sha: str) -> str:
-    """
-    Unique per workflow-run to avoid collisions on reruns:
-    - includes GITHUB_RUN_ID + GITHUB_RUN_ATTEMPT when available.
-    """
-    run_id = _env("GITHUB_RUN_ID", "local")
-    run_attempt = _env("GITHUB_RUN_ATTEMPT", "0")
-    short = base_sha[:7]
-    ymd = date.today().isoformat().replace("-", "")
-    return f"release/{mode}-{ymd}-{short}-{run_id}-{run_attempt}"
+        _run(["git", "commit", "-m", message], check=True)
 
 
 def _list_tags() -> list[str]:
-    out = _run(["git", "tag", "--list"])
+    out = _run(["git", "tag", "--list"], check=True)
     return [t for t in out.splitlines() if t.strip()]
 
 
-def _tag_name(pkg: str, version: Version) -> str:
-    return f"{TAG_PREFIX_FMT.format(pkg=pkg)}{version}"
-
-
-def _extract_version_from_tag(pkg: str, tag: str) -> Optional[Version]:
-    prefix = TAG_PREFIX_FMT.format(pkg=pkg)
-    if not tag.startswith(prefix):
-        return None
-    v = tag[len(prefix) :]
-    try:
-        return Version.parse(v)
-    except Exception:
-        return None
-
-
-def _latest_pkg_tag(pkg: str) -> tuple[Optional[str], Version]:
-    """
-    Determine latest tag for a package using semantic ordering:
-    - higher base version wins
-    - for same base, final > rc; else higher rc wins
-    If no tags, baseline version is 0.0.0.
-    """
-    tags = _list_tags()
-    best_tag = None
-    best_ver: Optional[Version] = None
-
-    for t in tags:
-        v = _extract_version_from_tag(pkg, t)
-        if v is None:
-            continue
-        if best_ver is None:
-            best_ver, best_tag = v, t
-            continue
-
-        a = (v.major, v.minor, v.patch)
-        b = (best_ver.major, best_ver.minor, best_ver.patch)
-        if a != b:
-            if a > b:
-                best_ver, best_tag = v, t
-            continue
-
-        # same base
-        if best_ver.rc is None:
-            continue
-        if v.rc is None:
-            best_ver, best_tag = v, t
-            continue
-        if v.rc > best_ver.rc:
-            best_ver, best_tag = v, t
-
-    if best_ver is None:
-        return None, Version(0, 0, 0, None)
-    return best_tag, best_ver
-
-
-def _first_commit() -> str:
-    out = _run(["git", "rev-list", "--max-parents=0", "HEAD"])
-    commits = [x.strip() for x in out.splitlines() if x.strip()]
-    if not commits:
-        raise RuntimeError("Cannot determine first commit (repo has no commits?)")
-    return commits[-1]
-
-
-def _rev_range_since(tag: Optional[str]) -> Optional[str]:
-    return f"{tag}..HEAD" if tag else None
-
-
-def _changed_files_since(tag: Optional[str], path_prefix: str) -> list[str]:
-    rr = _rev_range_since(tag)
-    if rr:
-        out = _run(["git", "diff", "--name-only", rr, "--", path_prefix])
-    else:
-        base = _first_commit()
-        out = _run(["git", "diff", "--name-only", f"{base}..HEAD", "--", path_prefix])
-    return [x for x in out.splitlines() if x.strip()]
-
-
-# ---------------- Conventional commit parsing ----------------
+# ---------------- conventional commit parsing ----------------
 _CONV_RE = re.compile(r"^(?P<type>[a-zA-Z]+)(?:\((?P<scope>[^)]+)\))?(?P<bang>!)?:\s+(?P<desc>.+)$")
 
 
@@ -338,21 +276,14 @@ def _parse_conventional_commit(*, sha: str, subject: str, body: str) -> CommitEn
 
 
 def _git_log_commits_since(tag: Optional[str], path_prefix: str) -> list[CommitEntry]:
-    """
-    commits affecting a given path since last tag, oldest-first.
-    If no tag exists, include full history for that path.
-    """
     fmt = "%H%n%s%n%b%n==END=="
-    rr = _rev_range_since(tag)
-
-    if rr:
-        out = _run(["git", "log", rr, "--pretty=format:" + fmt, "--", path_prefix])
+    if tag:
+        out = _run(["git", "log", f"{tag}..HEAD", "--pretty=format:" + fmt, "--", path_prefix], check=True)
     else:
-        out = _run(["git", "log", "--pretty=format:" + fmt, "--", path_prefix])
+        out = _run(["git", "log", "--pretty=format:" + fmt, "--", path_prefix], check=True)
 
     blocks = out.split("==END==")
     commits: list[CommitEntry] = []
-
     for b in blocks:
         b = b.strip("\n")
         if not b.strip():
@@ -398,9 +329,77 @@ def _next_version_for_mode(last: Version, bump: Bump, mode: BranchMode) -> Versi
     if mode == "final":
         return bumped
 
+    # rc mode: if last tag was rc for same bumped base -> rc+1 else rc1
     if last.rc is not None and (last.major, last.minor, last.patch) == (bumped.major, bumped.minor, bumped.patch):
         return bumped.to_rc(last.rc + 1)
     return bumped.to_rc(1)
+
+
+# ---------------- tag/version helpers ----------------
+def _tag_name(pkg: str, version: Version) -> str:
+    return f"{TAG_PREFIX_FMT.format(pkg=pkg)}{version}"
+
+
+def _extract_version_from_tag(pkg: str, tag: str) -> Optional[Version]:
+    prefix = TAG_PREFIX_FMT.format(pkg=pkg)
+    if not tag.startswith(prefix):
+        return None
+    v = tag[len(prefix) :]
+    try:
+        return Version.parse(v)
+    except Exception:
+        return None
+
+
+def _latest_pkg_tag(pkg: str) -> tuple[Optional[str], Version]:
+    tags = _list_tags()
+    best_tag = None
+    best_ver: Optional[Version] = None
+
+    for t in tags:
+        v = _extract_version_from_tag(pkg, t)
+        if v is None:
+            continue
+        if best_ver is None:
+            best_ver, best_tag = v, t
+            continue
+
+        a = (v.major, v.minor, v.patch)
+        b = (best_ver.major, best_ver.minor, best_ver.patch)
+        if a != b:
+            if a > b:
+                best_ver, best_tag = v, t
+            continue
+
+        # same base
+        if best_ver.rc is None:
+            continue
+        if v.rc is None:
+            best_ver, best_tag = v, t
+            continue
+        if v.rc > best_ver.rc:
+            best_ver, best_tag = v, t
+
+    if best_ver is None:
+        return None, Version(0, 0, 0, None)
+    return best_tag, best_ver
+
+
+def _first_commit() -> str:
+    out = _run(["git", "rev-list", "--max-parents=0", "HEAD"], check=True)
+    commits = [x.strip() for x in out.splitlines() if x.strip()]
+    if not commits:
+        _die("Cannot determine first commit (repo has no commits?)")
+    return commits[-1]
+
+
+def _changed_files_since(tag: Optional[str], path_prefix: str) -> list[str]:
+    if tag:
+        out = _run(["git", "diff", "--name-only", f"{tag}..HEAD", "--", path_prefix], check=True)
+    else:
+        base = _first_commit()
+        out = _run(["git", "diff", "--name-only", f"{base}..HEAD", "--", path_prefix], check=True)
+    return [x for x in out.splitlines() if x.strip()]
 
 
 # ---------------- pyproject editing ----------------
@@ -414,11 +413,11 @@ def _write_pyproject_version(pyproject: Path, new_version: Version) -> None:
         flags=re.M,
     )
     if n != 1:
-        raise RuntimeError(f"Could not update version in {pyproject} (expected exactly 1 match)")
+        _die(f"Could not update version in {pyproject} (expected exactly 1 match)")
     pyproject.write_text(new_text, encoding="utf-8")
 
 
-# ---------------- Keep a Changelog ----------------
+# ---------------- changelog ----------------
 def _changelog_path(pkg_dir: Path) -> Path:
     return pkg_dir / "CHANGELOG.md"
 
@@ -450,7 +449,7 @@ def _render_release_entry(plan: ReleasePlan, repo_slug: str, new_tag: str, prev_
         short = c.sha[:7]
         return f"- {scope}{c.subject}{breaking} ({short})"
 
-    sections = []
+    sections: list[str] = []
     mapping = [
         ("feat", "Added"),
         ("fix", "Fixed"),
@@ -491,7 +490,7 @@ def _insert_release_entry_under_unreleased(pkg_dir: Path, entry: str) -> None:
     if marker not in text:
         marker = "## [Unreleased]\n"
         if marker not in text:
-            raise RuntimeError(f"CHANGELOG.md missing [Unreleased] section in {pkg_dir}")
+            _die(f"CHANGELOG.md missing [Unreleased] section in {pkg_dir}")
 
     if marker == "## [Unreleased]\n\n":
         new_text = text.replace(marker, marker + entry + "\n", 1)
@@ -512,31 +511,28 @@ def _append_link_definition(pkg_dir: Path, version: Version, repo_slug: str, pre
     ch.write_text(text + "\n" + link_line, encoding="utf-8")
 
 
-# ---------------- GitHub API helpers ----------------
+# ---------------- GitHub API (optional: release notes) ----------------
 def _detect_repo_slug() -> str:
-    url = _run(["git", "remote", "get-url", "origin"])
+    url = _run(["git", "remote", "get-url", "origin"], check=True)
     if url.startswith("git@"):
         slug = url.split(":", 1)[1]
-    elif url.startswith("https://") or url.startswith("http://"):
+    elif url.startswith(("https://", "http://")):
         path = urllib.parse.urlparse(url).path
         slug = path.lstrip("/")
     else:
-        raise RuntimeError(f"Unsupported origin URL: {url}")
+        _die(f"Unsupported origin URL: {url}")
     return slug.removesuffix(".git")
+
+
+def _require_token() -> str:
+    tok = os.getenv(ENV_GITHUB_TOKEN)
+    if not tok:
+        _die(f"{ENV_GITHUB_TOKEN} is required (used for GitHub Releases API).")
+    return tok
 
 
 def _github_headers(token: str) -> dict:
     return {"Authorization": f"token {token}", "Accept": "application/vnd.github+json"}
-
-
-def _require_token() -> str:
-    tok = os.getenv(ENV_RELEASE_TOKEN) or os.getenv(ENV_GITHUB_TOKEN)
-    if not tok:
-        raise RuntimeError(
-            f"Missing token. Set {ENV_RELEASE_TOKEN} (preferred) or {ENV_GITHUB_TOKEN}.\n"
-            f"Note: {ENV_GITHUB_TOKEN} may NOT trigger tag-based publish workflows."
-        )
-    return tok
 
 
 def _github_api_base(repo_slug: str) -> str:
@@ -544,100 +540,7 @@ def _github_api_base(repo_slug: str) -> str:
     return f"https://api.github.com/repos/{owner}/{repo}"
 
 
-def _check_ci_green(repo_slug: str, commit_sha: str, token: str) -> bool:
-    owner, repo = repo_slug.split("/", 1)
-    url_status = f"https://api.github.com/repos/{owner}/{repo}/commits/{commit_sha}/status"
-    url_checks = f"https://api.github.com/repos/{owner}/{repo}/commits/{commit_sha}/check-runs"
-
-    deadline = time.time() + 240  # 4 min
-    last_state = None
-
-    while time.time() < deadline:
-        r = requests.get(url_status, headers=_github_headers(token), timeout=20)
-        if r.status_code != 200:
-            raise RuntimeError(f"Failed to fetch commit status: {r.status_code} {r.text}")
-        state = r.json().get("state")
-        last_state = state
-
-        if state != "success":
-            print(f"[CI] combined status state={state} for {commit_sha} (waiting...)")
-            time.sleep(5)
-            continue
-
-        r2 = requests.get(url_checks, headers=_github_headers(token), timeout=20)
-        if r2.status_code != 200:
-            raise RuntimeError(f"Failed to fetch check-runs: {r2.status_code} {r2.text}")
-
-        checks = r2.json().get("check_runs", [])
-        if not checks:
-            print(f"[CI] check-runs not visible yet for {commit_sha} (waiting...)")
-            time.sleep(5)
-            continue
-
-        all_completed = True
-        all_success = True
-        for c in checks:
-            name = c.get("name")
-            status = c.get("status")
-            conclusion = c.get("conclusion")
-            if status != "completed":
-                all_completed = False
-                all_success = False
-                print(f"[CI] check-run {name} status={status} (waiting...)")
-                break
-            if conclusion != "success":
-                all_success = False
-                print(f"[CI] check-run {name} conclusion={conclusion}")
-                break
-
-        if all_completed and all_success:
-            return True
-
-        time.sleep(5)
-
-    print(f"[CI] timeout waiting for CI to be green. last_state={last_state}")
-    return False
-
-
-def _github_create_pr(*, repo_slug: str, token: str, head: str, base: str, title: str, body: str) -> dict:
-    url = _github_api_base(repo_slug) + "/pulls"
-    payload = {"title": title, "head": head, "base": base, "body": body}
-    r = requests.post(url, headers=_github_headers(token), json=payload, timeout=30)
-    if r.status_code not in (200, 201):
-        raise RuntimeError(f"Failed to create PR: {r.status_code} {r.text}")
-    return r.json()
-
-
-def _github_get_pr(*, repo_slug: str, token: str, pr_number: int) -> dict:
-    url = _github_api_base(repo_slug) + f"/pulls/{pr_number}"
-    r = requests.get(url, headers=_github_headers(token), timeout=30)
-    if r.status_code != 200:
-        raise RuntimeError(f"Failed to get PR: {r.status_code} {r.text}")
-    return r.json()
-
-
-def _github_merge_pr(*, repo_slug: str, token: str, pr_number: int, method: str) -> dict:
-    url = _github_api_base(repo_slug) + f"/pulls/{pr_number}/merge"
-    payload = {"merge_method": method}
-    r = requests.put(url, headers=_github_headers(token), json=payload, timeout=30)
-    if r.status_code not in (200, 201):
-        raise RuntimeError(f"Failed to merge PR #{pr_number}: {r.status_code} {r.text}")
-    return r.json()
-
-
-def _github_create_lightweight_tag(*, repo_slug: str, token: str, tag: str, sha: str) -> None:
-    url = _github_api_base(repo_slug) + "/git/refs"
-    payload = {"ref": f"refs/tags/{tag}", "sha": sha}
-    r = requests.post(url, headers=_github_headers(token), json=payload, timeout=30)
-    if r.status_code in (200, 201):
-        return
-    if r.status_code == 422 and "Reference already exists" in r.text:
-        print(f"[release] Tag already exists on remote, skipping: {tag}")
-        return
-    raise RuntimeError(f"Failed to create tag ref {tag}: {r.status_code} {r.text}")
-
-
-def _create_github_release(repo_slug: str, tag: str, name: str, body: str, token: str, prerelease: bool) -> dict:
+def _create_github_release(repo_slug: str, tag: str, name: str, body: str, token: str, prerelease: bool) -> None:
     url = _github_api_base(repo_slug) + "/releases"
     payload = {
         "tag_name": tag,
@@ -647,44 +550,19 @@ def _create_github_release(repo_slug: str, tag: str, name: str, body: str, token
         "prerelease": prerelease,
     }
     r = requests.post(url, headers=_github_headers(token), json=payload, timeout=30)
-    if r.status_code not in (200, 201):
-        raise RuntimeError(f"Failed to create GitHub Release for {tag}: {r.status_code} {r.text}")
-    return r.json()
+    if r.status_code in (200, 201):
+        return
+    # Not critical to publishing; warn only.
+    _warn(f"Failed to create GitHub Release for {tag}: {r.status_code} {r.text}")
 
 
-def _github_find_open_pr(*, repo_slug: str, token: str, head_branch: str, base: str) -> Optional[dict]:
-    """
-    Find open PR by head+base. head must be "owner:branch" on GitHub API filters.
-    """
-    owner, _ = repo_slug.split("/", 1)
-    head_q = f"{owner}:{head_branch}"
-    url = _github_api_base(repo_slug) + (
-        f"/pulls?state=open&head={urllib.parse.quote(head_q)}&base={urllib.parse.quote(base)}"
-    )
-    r = requests.get(url, headers=_github_headers(token), timeout=30)
-    if r.status_code != 200:
-        raise RuntimeError(f"Failed to list PRs: {r.status_code} {r.text}")
-    prs = r.json() or []
-    return prs[0] if prs else None
-
-
-def _github_is_pr_merged(*, repo_slug: str, token: str, pr_number: int) -> bool:
-    url = _github_api_base(repo_slug) + f"/pulls/{pr_number}/merge"
-    r = requests.get(url, headers=_github_headers(token), timeout=30)
-    if r.status_code == 204:
-        return True
-    if r.status_code == 404:
-        return False
-    raise RuntimeError(f"Failed to check PR merge status: {r.status_code} {r.text}")
-
-
-# ---------------- Release planning & apply ----------------
+# ---------------- planning ----------------
 def build_plan_for_pkg(pkg: str, mode: BranchMode) -> ReleasePlan:
     root = _repo_root()
     pkg_dir = root / PACKAGES_DIR / pkg
     pyproject = pkg_dir / "pyproject.toml"
     if not pyproject.exists():
-        raise FileNotFoundError(f"Missing {pyproject}")
+        _die(f"Missing {pyproject}")
 
     last_tag, last_ver = _latest_pkg_tag(pkg)
     changed = _changed_files_since(last_tag, f"{PACKAGES_DIR}/{pkg}")
@@ -706,12 +584,14 @@ def build_plan_for_pkg(pkg: str, mode: BranchMode) -> ReleasePlan:
     )
 
 
-def apply_plan(plan: ReleasePlan, *, repo_slug: str, dry_run: bool) -> tuple[Optional[str], str]:
+def _apply_plan_on_release_branch(plan: ReleasePlan, repo_slug: str) -> tuple[Optional[str], str]:
     """
-    PR-based flow:
-    - Modify files + commit (on CURRENT branch = release branch).
-    - DO NOT tag.
-    Returns (tag, entry_body). If bump==none => (None, "").
+    Assumes we are already on release branch.
+    Performs:
+      - bump pyproject version
+      - update changelog
+      - commit
+    Returns: (tag, changelog_entry)
     """
     if plan.bump == "none":
         return None, ""
@@ -720,69 +600,76 @@ def apply_plan(plan: ReleasePlan, *, repo_slug: str, dry_run: bool) -> tuple[Opt
     new_tag = _tag_name(plan.pkg, plan.next_version)
     entry = _render_release_entry(plan, repo_slug, new_tag, prev_tag)
 
-    if dry_run:
-        print(f"  - would bump {plan.pkg}: {plan.last_version} -> {plan.next_version} ({plan.bump}), tag {new_tag}")
-        return new_tag, entry
-
     _write_pyproject_version(plan.pyproject, plan.next_version)
     _insert_release_entry_under_unreleased(plan.pkg_dir, entry)
     _append_link_definition(plan.pkg_dir, plan.next_version, repo_slug, prev_tag, new_tag)
+
     _git_commit_all(f"release({plan.pkg}): {plan.next_version}")
 
     return new_tag, entry
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser("Monorepo semantic release tool (PR-based for protected branches)")
-    ap.add_argument("--mode", choices=["rc", "final"], required=True, help="rc => test branch; final => master branch")
-    ap.add_argument("--packages", nargs="*", default=PACKAGES, help="packages to release (default: all)")
-    ap.add_argument("--dry-run", action="store_true", help="print plan only; do not modify repo")
-    ap.add_argument("--push", action="store_true", help="push via PR + merge + tag-after-merge")
-    ap.add_argument("--push-via-pr", action="store_true", help="REQUIRED for protected branches")
-    ap.add_argument("--no-auto-merge", action="store_true", help="create PR but do not auto-merge")
-    ap.add_argument("--pr-merge-method", choices=["merge", "squash", "rebase"], default="merge")
-    ap.add_argument("--branch", default=None, help="expected base branch (defaults based on --mode)")
-    ap.add_argument("--force", action="store_true", help="force release even if no changes")
+    ap = argparse.ArgumentParser("Monorepo release tool (branch-based; no PR API).")
+
+    ap.add_argument("--mode", choices=["rc", "final"], required=True)
+    ap.add_argument("--packages", nargs="*", default=PACKAGES)
+
+    ap.add_argument("--base-branch", required=True, help="Base branch to release from (e.g. test / master)")
+    ap.add_argument("--release-branch", required=True, help="Branch to push release commits to (e.g. release-test / release)")
+
+    ap.add_argument("--push", action="store_true", help="Push release branch + tags to origin")
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--force", action="store_true")
     ap.add_argument("--force-bump", choices=["patch", "minor", "major"], default="patch")
-    ap.add_argument("--allow-dirty", action="store_true", help="allow running with uncommitted changes (LOCAL TEST ONLY)")
-    ap.add_argument("--skip-ci-check", action="store_true", help="skip waiting for CI green")
+    ap.add_argument("--allow-dirty", action="store_true")
+
+    ap.add_argument("--skip-base-sync-check", action="store_true", help="WARNING: allows releasing even if local != origin/base")
+    ap.add_argument("--skip-github-release", action="store_true", help="Don't create GitHub Releases via API")
+
+    ap.add_argument("--debug", action="store_true")
+
     args = ap.parse_args()
 
     mode: BranchMode = args.mode  # type: ignore
-    base_branch = args.branch or REQUIRED_BRANCH_FOR_MODE[mode]
+    base_branch: str = args.base_branch
+    release_branch: str = args.release_branch
 
-    _fetch_all()  # make sure tags/branches are fresh
-
-    cur = _current_branch()
-    # In GitHub Actions, checkout can be detached (cur == "HEAD") even when you intend to build from a branch.
-    # Don't fail in that case — just make sure HEAD commit belongs to origin/<base_branch>,
-    # then attach a local branch for later operations.
-    if cur != base_branch:
-        if cur == "HEAD":
-            # attach local branch to remote base
-            _fetch_all()
-            _run(["git", "checkout", "-B", base_branch, f"origin/{base_branch}"])
-        else:
-            raise RuntimeError(
-                f"Release mode '{mode}' must run on branch '{base_branch}'. You are on '{cur}'."
-            )
+    # --- preflight ---
+    if args.debug:
+        _run_dbg(["git", "--version"])
+        _run_dbg(["git", "status", "--porcelain=v1", "-b"])
+        _run_dbg(["git", "remote", "-v"])
+        _run_dbg(["git", "rev-parse", "HEAD"])
 
     _ensure_clean(allow_dirty=args.allow_dirty)
 
+    # HEAD branch in Actions can be detached => WARNING only
+    cur = _current_branch()
+    if cur == "HEAD":
+        _warn("Detached HEAD detected (common in GitHub Actions). Continuing.")
+    else:
+        _info(f"Current branch: {cur}")
+
+    # Ensure base branch exists on remote
+    _ensure_remote_branch_exists(base_branch)
+
+    # Checkout base branch to base SHA, and ensure local matches origin/base unless skipped
+    _checkout_branch(base_branch)
+    _fetch_all()
+    _run(["git", "reset", "--hard", f"origin/{base_branch}"], check=True)
+    base_sha = _head_sha()
+
+    if not args.skip_base_sync_check:
+        _ensure_head_matches_origin(base_branch)
+    else:
+        _warn("skip-base-sync-check enabled: not enforcing local HEAD == origin/base.")
+
     repo_slug = os.getenv(ENV_GITHUB_REPOSITORY) or DEFAULT_REPO_SLUG or _detect_repo_slug()
-    token = _require_token()
 
-    # Enforce base commit belongs to the expected remote branch before making release commits.
-    base_sha = _head_sha("HEAD")
-    _ensure_commit_on_branch(base_sha, base_branch)
-
-    # Optional: ensure CI green on base commit (workflow_run already implies this, but keep for local safety)
-    if not args.skip_ci_check:
-        ok = _check_ci_green(repo_slug, base_sha, token)
-        if not ok:
-            raise RuntimeError(f"CI not green for base commit {base_sha}. Aborting.")
-
+    # Build plans (on base)
     plans = [build_plan_for_pkg(p, mode) for p in args.packages]
+
     if args.force:
         for pl in plans:
             if pl.bump == "none":
@@ -792,7 +679,7 @@ def main() -> int:
         plans = [p for p in plans if p.bump != "none"]
 
     if not plans:
-        print("No package changes detected since last tags. Nothing to release.")
+        _info("No package changes detected since last tags. Nothing to release.")
         return 0
 
     print("\n=== RELEASE PLAN ===")
@@ -809,128 +696,54 @@ def main() -> int:
         print("\nDRY-RUN: no files changed, no commits/tags created.\n")
         return 0
 
-    # If pushing: do PR-based flow on a release branch.
-    rel_branch = None
-    if args.push:
-        if not args.push_via_pr:
-            raise RuntimeError(
-                "Repo ruleset says: changes must be made through a pull request.\n"
-                "Run with: --push --push-via-pr"
-            )
+    # Switch to release branch anchored at base SHA (critical!)
+    _checkout_release_branch(release_branch, base_sha=base_sha)
 
-        rel_branch = _make_release_branch_name(mode=mode, base_sha=base_sha)
-        # critical: create/checkout release branch from base branch BEFORE making release commits
-        _git_checkout_or_create_branch_from(rel_branch, base_branch)
-    else:
-        # no push: just commit on base branch (local only)
-        rel_branch = None
-
+    # Apply plans on release branch
     tags: list[str] = []
     entries_by_tag: dict[str, str] = {}
 
     for p in plans:
-        t, entry = apply_plan(p, repo_slug=repo_slug, dry_run=False)
+        t, entry = _apply_plan_on_release_branch(p, repo_slug=repo_slug)
         if t:
             tags.append(t)
             entries_by_tag[t] = entry
 
     if not tags:
-        print("No releases produced.")
+        _info("No releases produced (unexpected).")
         return 0
 
-    if not args.push:
-        print("\n✅ Local commits created (no push). Planned tags:")
+    # Push branch + tags
+    if args.push:
+        _push_release_branch(release_branch)
+
+        for t in tags:
+            _push_tag(t)
+
+        # GitHub Releases are optional: failures are warnings
+        if not args.skip_github_release:
+            token = _require_token()
+            prerelease = (mode == "rc")
+            for t in tags:
+                body = entries_by_tag.get(t, "").strip()
+                _create_github_release(
+                    repo_slug=repo_slug,
+                    tag=t,
+                    name=t,
+                    body=body + ("\n" if body else ""),
+                    token=token,
+                    prerelease=prerelease,
+                )
+        else:
+            _warn("skip-github-release enabled: not creating GitHub Releases via API.")
+
+        print("\n✅ Released tags:")
         for t in tags:
             print(" -", t)
-        return 0
-
-    assert rel_branch is not None
-
-    # Push branch (idempotent)
-    _git_push_branch_upsert(rel_branch)
-
-    # Create or reuse PR
-    existing = _github_find_open_pr(repo_slug=repo_slug, token=token, head_branch=rel_branch, base=base_branch)
-    if existing:
-        pr_number = existing["number"]
-        pr_url = existing.get("html_url", "")
-        print(f"\n✅ Reusing existing PR #{pr_number}: {pr_url}")
-        pr = existing
     else:
-        pr_title = f"Release {mode}: " + ", ".join(tags)
-        pr_body = (
-                f"Automated release PR for mode={mode}.\n\n"
-                f"- Base branch: `{base_branch}`\n"
-                f"- Release branch: `{rel_branch}`\n\n"
-                "Tags to be created after merge:\n"
-                + "\n".join([f"- `{t}`" for t in tags])
-                + "\n"
-        )
-        pr = _github_create_pr(
-            repo_slug=repo_slug,
-            token=token,
-            head=rel_branch,
-            base=base_branch,
-            title=pr_title,
-            body=pr_body,
-        )
-        pr_number = pr["number"]
-        pr_url = pr.get("html_url", "")
-        print(f"\n✅ Created PR #{pr_number}: {pr_url}")
-
-    if args.no_auto_merge:
-        print("\nAuto-merge disabled. Merge the PR manually, then rerun release to create tags.")
-        return 0
-
-    # If already merged (rerun), skip merge and just tag
-    if _github_is_pr_merged(repo_slug=repo_slug, token=token, pr_number=pr_number):
-        pr2 = _github_get_pr(repo_slug=repo_slug, token=token, pr_number=pr_number)
-        merge_sha = pr2.get("merge_commit_sha")
-        if not merge_sha:
-            raise RuntimeError("PR is merged but merge_commit_sha is missing.")
-        print(f"\n✅ PR already merged. merge_commit_sha={merge_sha}")
-    else:
-        # Refresh PR object (ensure we have current head sha)
-        pr2 = _github_get_pr(repo_slug=repo_slug, token=token, pr_number=pr_number)
-        pr_head_sha = pr2["head"]["sha"]
-
-        if not args.skip_ci_check:
-            ok = _check_ci_green(repo_slug, pr_head_sha, token)
-            if not ok:
-                raise RuntimeError(f"CI not green for PR head {pr_head_sha}. Aborting merge.")
-
-        merge = _github_merge_pr(
-            repo_slug=repo_slug,
-            token=token,
-            pr_number=pr_number,
-            method=args.pr_merge_method,
-        )
-        merge_sha = merge.get("sha") or pr2.get("merge_commit_sha")
-        if not merge_sha:
-            # one more refresh
-            pr3 = _github_get_pr(repo_slug=repo_slug, token=token, pr_number=pr_number)
-            merge_sha = pr3.get("merge_commit_sha")
-        if not merge_sha:
-            raise RuntimeError("Cannot determine merge commit SHA after merge.")
-        print(f"\n✅ PR merged. merge_commit_sha={merge_sha}")
-
-    # Tag + GitHub Release (idempotent)
-    prerelease = (mode == "rc")
-    for t in tags:
-        _github_create_lightweight_tag(repo_slug=repo_slug, token=token, tag=t, sha=merge_sha)
-        body = entries_by_tag.get(t, "").strip()
-        _create_github_release(
-            repo_slug=repo_slug,
-            tag=t,
-            name=t,
-            body=body + ("\n" if body else ""),
-            token=token,
-            prerelease=prerelease,
-        )
-
-    print("\n✅ Released tags:")
-    for t in tags:
-        print(" -", t)
+        print("\n✅ Local release branch commits created (no push). Planned tags:")
+        for t in tags:
+            print(" -", t)
 
     return 0
 
