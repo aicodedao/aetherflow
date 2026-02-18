@@ -227,7 +227,7 @@ def _push_release_branch(release_branch: str) -> None:
     Push release branch. If it already exists remotely, overwrite it only if fast-forward.
     """
     # -u is fine even if exists; git handles it. If branch protection blocks it, that's a hard fail.
-    _run(["git", "push", "-u", "origin", release_branch], check=True)
+    _run(["git", "push", "-u", "origin", release_branch, "--verbose"], check=True)
 
 
 def _push_tag(tag: str) -> None:
