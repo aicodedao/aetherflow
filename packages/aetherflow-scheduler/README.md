@@ -1,7 +1,7 @@
 # aetherflow-scheduler
 
-[![TestPyPI Version](https://img.shields.io/pypi/v/aetherflow-scheduler.svg?label=TestPyPI&pypiBaseUrl=https://test.pypi.org)](https://test.pypi.org/project/aetherflow-scheduler/)
-[![PyPI Version](https://img.shields.io/pypi/v/aetherflow-scheduler)](https://pypi.org/project/aetherflow-scheduler/)
+[![TestPyPI Version](https://img.shields.io/badge/dynamic/json?label=TestPyPI&url=https://test.pypi.org/pypi/aetherflow-scheduler/json&query=$.info.version&cacheSeconds=10)](https://test.pypi.org/project/aetherflow-core/)
+[![PyPI Version](https://img.shields.io/pypi/v/aetherflow-scheduler?cacheSeconds=10)](https://pypi.org/project/aetherflow-scheduler/)
 
 `aetherflow-scheduler` is a **thin cron-style scheduler** for AetherFlow, built on **APScheduler**.
 
