@@ -1,5 +1,6 @@
 # aetherflow-scheduler
 
+[![GitHub Repo](https://img.shields.io/badge/GitHub-aetherflow-blue?logo=github)](https://github.com/aicodedao/aetherflow/tree/master/packages/aetherflow-scheduler)
 [![TestPyPI Version](https://img.shields.io/badge/dynamic/json?label=TestPyPI&url=https://test.pypi.org/pypi/aetherflow-scheduler/json&query=$.info.version&cacheSeconds=10)](https://test.pypi.org/project/aetherflow-core/)
 [![PyPI Version](https://img.shields.io/pypi/v/aetherflow-scheduler?cacheSeconds=10)](https://pypi.org/project/aetherflow-scheduler/)
 
@@ -19,7 +20,7 @@ This distribution ships the CLI **`aetherflow-scheduler`**.
 pip install aetherflow-scheduler
 ```
 
-This depends on [aetherflow-core](../aetherflow-core) and installs it automatically.
+This depends on [aetherflow-core](https://github.com/aicodedao/aetherflow/tree/master/packages/aetherflow-core) and installs it automatically.
 
 Python: **3.10+**.
 
@@ -80,10 +81,10 @@ AetherFlow itself can use **locks/state** to avoid overlapping executions and to
 Scheduler is intentionally minimal: it triggers runs; the “safety” lives in core.
 
 Relevant docs:
-- [Locking guide](../../docs/05-locking-guide.md)
-- [State](../../docs/17-state.md)
-- [Concurrency](../../docs/15-concurrency.md)
-- [Failure Recovery Playbook](../../docs/404-Failure-Recovery-Playbook.md)
+- [Locking guide](https://github.com/aicodedao/aetherflow/tree/master/docs/05-locking-guide.md)
+- [State](https://github.com/aicodedao/aetherflow/tree/master/docs/17-state.md)
+- [Concurrency](https://github.com/aicodedao/aetherflow/tree/master/docs/15-concurrency.md)
+- [Failure Recovery Playbook](https://github.com/aicodedao/aetherflow/tree/master/docs/404-Failure-Recovery-Playbook.md)
 
 ---
 
@@ -103,7 +104,7 @@ Do **not** rely on ambiguous imports like `aetherflow.x`.
 ## Docs (in this repository)
 
 Scheduler-specific doc:
-- [Scheduler yaml guide](../../docs/07-scheduler-yaml-guide.md)
+- [Scheduler yaml guide](https://github.com/aicodedao/aetherflow/tree/master/docs/07-scheduler-yaml-guide.md)
 
 Start here:
-- [Home Docs.](../../docs/INDEX.md)
+- [Home Docs.](https://github.com/aicodedao/aetherflow/tree/master/docs/index.md)

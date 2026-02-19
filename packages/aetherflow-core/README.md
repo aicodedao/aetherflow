@@ -1,5 +1,6 @@
 # aetherflow-core
 
+[![GitHub Repo](https://img.shields.io/badge/GitHub-aetherflow-blue?logo=github)](https://github.com/aicodedao/aetherflow/tree/master/packages/aetherflow-core)
 [![TestPyPI Version](https://img.shields.io/badge/dynamic/json?label=TestPyPI&url=https://test.pypi.org/pypi/aetherflow-core/json&query=$.info.version&cacheSeconds=10)](https://test.pypi.org/project/aetherflow-core/)
 [![PyPI Version](https://img.shields.io/pypi/v/aetherflow-core?cacheSeconds=10)](https://pypi.org/project/aetherflow-core/)
 
@@ -79,7 +80,7 @@ aetherflow run --flow-yaml flow.yaml --flow-job main
 ```
 
 Full command reference (in this repo):
-- [Cli. Reference](../../docs/90-cli-reference.md)
+- [Cli. Reference](https://github.com/aicodedao/aetherflow/tree/master/docs/90-cli-reference.md)
 
 ---
 
@@ -112,30 +113,30 @@ High-level flow:
 3) Reference it by `type:` in YAML.
 
 Plugin guide:
-- [Plugins](../../docs/18-plugins.md)
-- [Connectors](../../docs/19-connectors.md)
-- [Steps](../../docs/20-steps.md)
+- [Plugins](https://github.com/aicodedao/aetherflow/tree/master/docs/18-plugins.md)
+- [Connectors](https://github.com/aicodedao/aetherflow/tree/master/docs/19-connectors.md)
+- [Steps](https://github.com/aicodedao/aetherflow/tree/master/docs/20-steps.md)
 
 ---
 
 ## YAML spec & guides
 
 Start here:
-- [Yaml Spec.](../../docs/06-yaml-spec.md)
-- [Flow yaml guide](../../docs/10-flow-yaml-guide.md)
-- [Flow in 15-minutes](../../docs/93-flow-in-15-minutes.md)
+- [Yaml Spec.](https://github.com/aicodedao/aetherflow/tree/master/docs/06-yaml-spec.md)
+- [Flow yaml guide](https://github.com/aicodedao/aetherflow/tree/master/docs/10-flow-yaml-guide.md)
+- [Flow in 15-minutes](https://github.com/aicodedao/aetherflow/tree/master/docs/93-flow-in-15-minutes.md)
 
 Built-in catalog:
-- [Step - External process](../../docs/22-external-process-step.md)
-- [Builtins Catalog](../../docs/23-builtins-catalog.md)
+- [Step - External process](https://github.com/aicodedao/aetherflow/tree/master/docs/22-external-process-step.md)
+- [Builtins Catalog](https://github.com/aicodedao/aetherflow/tree/master/docs/23-builtins-catalog.md)
 
 ---
 
 ## Docs (in this repository)
 
-Canonical docs live in [Aetherflow Doumentation](../../docs).
+Canonical docs live in [Aetherflow Doumentation](https://github.com/aicodedao/aetherflow/tree/master/docs).
 
 Start here:
-- [Home Docs.](../../docs/INDEX.md)
+- [Home Docs.](https://github.com/aicodedao/aetherflow/tree/master/docs/index.md)
 
-If you need scheduling, install **[aetherflow-scheduler](../aetherflow-scheduler)**.
+If you need scheduling, install **[aetherflow-scheduler](https://github.com/aicodedao/aetherflow/tree/master/packages/aetherflow-scheduler)**.
