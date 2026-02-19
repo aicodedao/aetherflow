@@ -8,6 +8,7 @@ version = "0.0.1"
 description = "AetherFlow meta package (convenience wrapper for core + scheduler)"
 readme = "README.md"
 requires-python = ">=3.10"
+license-files = ["LICEN[CS]E*"]
 dependencies = [
   "aetherflow-core>=0.0.1",
   "aetherflow-scheduler>=0.0.0"
@@ -17,7 +18,7 @@ dependencies = [
 Homepage = "https://github.com/aicodedao/aetherflow"
 Source = "https://github.com/aicodedao/aetherflow/tree/master/packages/aetherflow"
 Documentation = "https://github.com/aicodedao/aetherflow/tree/master/docs"
-license = { file = "LICENSE" }
+license = "https://github.com/aicodedao/aetherflow/blob/master/LICENSE"
 "Bug Tracker" = "https://github.com/aicodedao/aetherflow/issues"
 CI = "https://github.com/aicodedao/aetherflow/blob/master/.github/workflows/ci.yaml"
 

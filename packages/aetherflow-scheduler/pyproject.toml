@@ -8,7 +8,7 @@ version = "0.0.1"
 description = "APScheduler integration for aetherflow-core."
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "MIT"}
+license-files = ["LICEN[CS]E*"]
 authors = [{name="aetherflow contributors"}]
 dependencies = ["aetherflow-core>=0.0.1", "APScheduler>=3.10", "PyYAML>=6.0"]
 
@@ -19,7 +19,7 @@ aetherflow-scheduler = "aetherflow.scheduler.cli:main"
 Homepage = "https://github.com/aicodedao/aetherflow"
 Source = "https://github.com/aicodedao/aetherflow/tree/master/packages/aetherflow-scheduler"
 Documentation = "https://github.com/aicodedao/aetherflow/tree/master/docs"
-license = { file = "LICENSE" }
+license = "https://github.com/aicodedao/aetherflow/blob/master/LICENSE"
 "Bug Tracker" = "https://github.com/aicodedao/aetherflow/issues"
 CI = "https://github.com/aicodedao/aetherflow/blob/master/.github/workflows/ci.yaml"
 
