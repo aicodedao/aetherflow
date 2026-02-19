@@ -8,7 +8,7 @@ version = "0.0.1"
 description = "Workflow operations engine (flow/job/step) with state, resume, cleanup and plugins."
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "MIT"}
+license-files = ["LICEN[CS]E*"]
 authors = [{name="aetherflow contributors"}]
 dependencies = [
   "pydantic>=2.6",
@@ -40,10 +40,12 @@ aetherflow = "aetherflow.core.cli:main"
 # myplugin = "myplugin_aetherflow.plugin:register"
 
 [project.urls]
-"Homepage" = "https://github.com/aicodedao/aetherflow"
-"Documentation" = "https://github.com/aicodedao/aetherflow/tree/develop/docs"
-"Source" = "https://github.com/aicodedao/aetherflow/tree/develop/packages/aetherflow-core"
+Homepage = "https://github.com/aicodedao/aetherflow"
+Source = "https://github.com/aicodedao/aetherflow/tree/master/packages/aetherflow-core"
+Documentation = "https://github.com/aicodedao/aetherflow/tree/master/docs"
+license = "https://github.com/aicodedao/aetherflow/blob/master/LICENSE"
 "Bug Tracker" = "https://github.com/aicodedao/aetherflow/issues"
+CI = "https://github.com/aicodedao/aetherflow/blob/master/.github/workflows/ci.yaml"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

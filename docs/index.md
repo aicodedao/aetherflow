@@ -1,10 +1,10 @@
 # AetherFlow Documentation
 
 [![GitHub Repo](https://img.shields.io/badge/GitHub-aetherflow-blue?logo=github)](https://github.com/aicodedao/aetherflow)
-[![CI](https://github.com/aicodedao/aetherflow/actions/workflows/ci.yaml/badge.svg)](https://github.com/aicodedao/aetherflow/blob/develop/.github/workflows/ci.yaml)
+[![CI](https://github.com/aicodedao/aetherflow/actions/workflows/ci.yaml/badge.svg)](https://github.com/aicodedao/aetherflow/blob/master/.github/workflows/ci.yaml)
 [![PyPI](https://img.shields.io/pypi/v/aetherflow-core?cacheSeconds=10)](https://pypi.org/project/aetherflow-core/)
 [![Python](https://img.shields.io/badge/dynamic/json?label=Python&url=https://pypi.org/pypi/aetherflow-core/json&query=$.info.requires_python&cacheSeconds=10)](https://pypi.org/project/aetherflow-core/)
-[![License](https://img.shields.io/badge/license-Internal-blue)](https://github.com/aicodedao/aetherflow/blob/develop/LICENSE)
+[![License](https://img.shields.io/badge/license-Internal-blue)](https://github.com/aicodedao/aetherflow/blob/master/LICENSE)
 
 
 This is the **canonical documentation index** for AetherFlow.
