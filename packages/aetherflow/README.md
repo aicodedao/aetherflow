@@ -1,13 +1,14 @@
-# aetherflow (meta package)
+# aetherflow 
 
+[![GitHub Repo](https://img.shields.io/badge/GitHub-aetherflow-blue?logo=github)](https://github.com/aicodedao/aetherflow/tree/master/packages/aetherflow)
 [![TestPyPI Version](https://img.shields.io/badge/dynamic/json?label=TestPyPI&url=https://test.pypi.org/pypi/aetherflow/json&query=$.info.version&cacheSeconds=10)](https://test.pypi.org/project/aetherflow-core/)
 [![PyPI Version](https://img.shields.io/pypi/v/aetherflow?cacheSeconds=10)](https://pypi.org/project/aetherflow/)
 
 `aetherflow` is a **convenience meta package**.
 
 It installs:
-- [aetherflow-core](../aetherflow-core) (core engine + CLI `aetherflow`)
-- [aetherflow-scheduler](../aetherflow-scheduler) (scheduler + CLI `aetherflow-scheduler`)
+- [aetherflow-core](https://github.com/aicodedao/aetherflow/tree/master/packages/aetherflow-core) (core engine + CLI `aetherflow`)
+- [aetherflow-scheduler](https://github.com/aicodedao/aetherflow/tree/master/packages/aetherflow-scheduler) (scheduler + CLI `aetherflow-scheduler`)
 
 It intentionally ships **no Python package code** itself (it’s just dependencies).
 
@@ -61,7 +62,7 @@ Do:
 
 ## Docs (in this repository)
 
-Canonical docs live in [Aetherflow Doumentation](../../docs).
+Canonical docs live in [Aetherflow Doumentation](https://github.com/aicodedao/aetherflow/tree/master/docs).
 
 Start here:
-- [Home Docs.](../../docs/INDEX.md)
+- [Home Docs.](https://github.com/aicodedao/aetherflow/tree/master/docs/index.md)

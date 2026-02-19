@@ -14,10 +14,12 @@ dependencies = [
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/aicodedao/aetherflow"
-"Documentation" = "https://github.com/aicodedao/aetherflow/tree/develop/docs"
-"Source" = "https://github.com/aicodedao/aetherflow/tree/develop/packages/aetherflow"
+Homepage = "https://github.com/aicodedao/aetherflow"
+Source = "https://github.com/aicodedao/aetherflow/tree/master/packages/aetherflow"
+Documentation = "https://github.com/aicodedao/aetherflow/tree/master/docs"
+license = { file = "LICENSE" }
 "Bug Tracker" = "https://github.com/aicodedao/aetherflow/issues"
+CI = "https://github.com/aicodedao/aetherflow/blob/master/.github/workflows/ci.yaml"
 
 [tool.setuptools]
 packages = []
