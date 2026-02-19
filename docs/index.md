@@ -111,39 +111,17 @@ If you want custom connectors or steps:
 - [19-connectors](19-connectors.md)
 - [20-steps](20-steps.md)
 - [25-public-api-and-semver](25-public-api-and-semver.md)
+- [21-reporting-guide.md](21-reporting-guide.md)
+- [22-external-process-step.md](22-external-process-step.md)
+- [23-builtins-catalog.md](23-builtins-catalog.md)
 
-Critical rule:
-Only import from:
+**Critical rule** - Only import from:
 
 ```python
 from aetherflow.core.api import ...
-````
+```
 
-Everything else is internal.
-
----
-
-## Maintaining the project
-
-For maintainers and release managers:
-
-* [24-responsibility-model](24-responsibility-model.md)
-* [25-public-api-and-semver](25-public-api-and-semver.md)
-* [26-release-process](26-release-process.md)
-* [27-publishing-to-pypi](27-publishing-to-pypi.md)
-* [28-maintainer-release-checklist](28-maintainer-release-checklist.md)
-* [29-renaming-checklist](29-renaming-checklist.md)
-* [30-repo-files](30-repo-files.md)
-* [31-labeling-guide](31-labeling-guide.md)
-* [32-ci-cd.md](32-ci-cd.md)
-
-These define:
-
-* governance
-* SemVer rules
-* release safety
-* repo structure constraints
-* labeling discipline
+Everything else is internal, and might be deprecated or not stable
 
 ---
 
@@ -197,6 +175,8 @@ These define:
 
 # Maintainer / Governance
 
+For maintainers and release managers:
+
 * [24-responsibility-model](24-responsibility-model.md)
 * [25-public-api-and-semver](25-public-api-and-semver.md)
 * [26-release-process](26-release-process.md)
@@ -205,17 +185,22 @@ These define:
 * [29-renaming-checklist](29-renaming-checklist.md)
 * [30-repo-files](30-repo-files.md)
 * [31-labeling-guide](31-labeling-guide.md)
+* [32-ci-cd.md](32-ci-cd.md)
 
----
+These define:
+
+* governance
+* SemVer rules
+* release safety
+* repo structure constraints
+* labeling discipline
 
 # Reading Strategy
 
 If overwhelmed:
 
-1. Run something first → 93
-2. Understand what just happened → 03 + 17
-3. Learn how failures behave → 404
+1. Run something first → [93-flow-in-15-minutes.md](93-flow-in-15-minutes.md)
+2. Understand what just happened → [03-execution-model.md](03-execution-model.md) + [17-state.md](17-state.md)
+3. Learn how failures behave → [04-Failure-Recovery-Playbook.md](404-Failure-Recovery-Playbook.md)
 4. Only then go into plugins and governance
 
-AetherFlow is intentionally small.
-The depth is in the guarantees, not in surface area.
