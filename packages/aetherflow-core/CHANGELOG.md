@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+## [0.0.15rc1] - 2026-02-19
+
+Compare: https://github.com/aicodedao/aetherflow/compare/aetherflow-core-v0.0.14...aetherflow-core-v0.0.15rc1
+
 All notable changes to this package will be documented in this file.
 
 The format is inspired by Keep a Changelog.
@@ -22,3 +28,5 @@ Initial public release of core engine components.
 
 ### Notes
 - Baseline version aligned with monorepo first public release.
+
+[0.0.15rc1]: https://github.com/aicodedao/aetherflow/compare/aetherflow-core-v0.0.14...aetherflow-core-v0.0.15rc1
